@@ -1,0 +1,31 @@
+=== 危险汇聚点 (mcverify/index.php:465-469) ===
+ 465| function loadMine(){fetch('/?action=mine',{credentials:'same-origin'}).then(function(r){return r.json()}).then(function(j){
+ 466| if(!j.ok)return;var box=q('mylog');if(!j.items.length){box.textContent='（暂无）';return}
+ 467| box.innerHTML=j.items.map(function(it){
+ 468| var s=it.submitted_at?'<span class="pill p-ok">已通过</span>':(it.expired?'<span class="pill p-bad">已过期</span>':'<span class="pill p-wait">待验证</span>');
+ 469| return '<div>'+it.t+' · '+ (it.mc_name) + s +'</div>'}).join('')})}
+
+=== 该函数内没有任何转义 ===
+  escapeHtml         出现在本文件 = False
+  textContent        出现在本文件 = True
+  innerText          出现在本文件 = False
+  DOMPurify          出现在本文件 = False
+  encodeURIComponent 出现在本文件 = True
+  同文件另一处对昵称是正确转义的 (line 381):
+ 381| <p style="font-size:13px;color:#334155">当前账号：<b><?= htmlspecialchars((string)$u['nickname'], ENT_QUOTES) ?></b>
+
+=== 渲染结果（等价 innerHTML 字符串） ===
+<div>10:00:00 · </div><img src=x onerror=alert(document.domain)><div><span class="pill p-wait">待验证</span></div>
+
+=== 解析该字符串得到的元素/属性（等价 DOM 结果） ===
+  <div >
+  <img src="x" onerror="alert(document.domain)">
+  <div >
+  <span class="pill p-wait">
+
+  是否生成带 onerror 的 <img> = True
+  -> mc_name 来自 mc_codes.mc_name；mc-api.php:45 只校验 strlen<=32，不限制字符集
+
+判定: mc_name 未转义直接拼入 innerHTML，可执行脚本（触发需 MC 名含 HTML 字符；
+      依赖服务端/代理允许非 [A-Za-z0-9_] 角色名，且该行 user_id 属于浏览者本人）。
+RESULT: 复现通过

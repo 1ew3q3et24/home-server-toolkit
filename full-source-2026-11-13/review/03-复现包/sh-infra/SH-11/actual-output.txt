@@ -1,0 +1,44 @@
+== 0. 源码事实（work/src 行号）==
+ddos-mode.sh:38: if ! nginx -t >/tmp/ddos-nginx-test.log 2>&1; then
+ddos-mode.sh:39: cp -a "$BAK" "$CONF" 2>/dev/null || : > "$CONF"
+ddos-mode.sh:40: nginx -t >>/tmp/ddos-nginx-test.log 2>&1 && systemctl reload nginx || true
+ddos-mode.sh:41: exit 1
+ddos-mode.sh:42: fi
+ddos-mode.sh:43: systemctl reload nginx
+--- 对照：cf-set-a.sh 的正确写法 ---
+cf-set-a.sh:9: CFG=$(mktemp); chmod 600 "$CFG"
+cf-set-a.sh:10: { printf 'header = "Authorization: Bearer '; cat /root/.config/cloudflare/token; printf '"\n'; } > "$CFG"
+cf-set-a.sh:11: trap 'rm -f "$CFG"' EXIT
+
+== 1. 静态核对 ==
+   固定路径 /tmp/ddos-nginx-test.log      成立
+   以 `>` 截断写入                         成立
+   第二次以 `>>` 追加                       成立
+   脚本内未使用 mktemp                      成立
+   脚本内无 umask                         成立
+   脚本内无 set -o noclobber              成立
+   对照：cf-set-a.sh 使用 mktemp           成立
+   对照：cf-set-a.sh chmod 600           成立
+
+== 2. 为什么这是 root 权限问题 ==
+   - /tmp 带 sticky bit：任何本地用户都可以在“文件名不存在”时创建它
+     （可以创建符号链接，但不能删除/替换 root 已创建的文件）；
+   - 第一次成功抢注后，root 的 `>` 会打开该链接指向的目标并**截断**它，
+     `>>` 继续追加 nginx -t 的输出 —— 链接一直存在，所以每次执行都会重复；
+   - 也就是说：ddos-mode.sh 每次上线/运维执行，都会写一次攻击者指定的文件。
+
+   用 Python 复刻“打开路径=跟随链接”的语义（模型，不实际创建链接）：
+     open('/tmp/ddos-nginx-test.log','w')  ==  open(<link target>,'w')  -> 截断 target
+   注意截断内容的可控性有限（内容 = nginx -t 的错误文本），因此主要是：
+     * 破坏任意 root 文件（sshd_config / cron / ld.so.preload 等）-> 服务异常或提权链前置
+     * 该日志文件 world-readable，泄露配置路径（信息量低）
+
+   [判定] 可被本地用户预置链接 + root 固定路径覆盖 = 成立
+
+== 3. 结论 ==
+   root 脚本写固定 /tmp 路径属于经典不安全管理；项目在 cf-set-a.sh 已用 mktemp，
+   说明修复成本极低，属于应改项。
+
+VERDICT: REPRODUCED
+
+[exit code] 0

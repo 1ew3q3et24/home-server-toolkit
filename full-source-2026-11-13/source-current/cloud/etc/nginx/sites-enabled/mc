@@ -1,0 +1,20 @@
+server {
+    listen 80;
+    server_name mc.lzj2012.top;
+    location /.well-known/acme-challenge/ { root /var/www/html; }
+    return 301 https://lzj2012.top$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    http2 on;
+    server_name mc.lzj2012.top;
+    ssl_certificate /etc/letsencrypt/live/wildcard.lzj2012.top/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/wildcard.lzj2012.top/privkey.pem;
+
+    # 安全响应头 (2026-10-06)
+    add_header Strict-Transport-Security "max-age=31536000" always;
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    return 301 https://lzj2012.top$request_uri;
+}

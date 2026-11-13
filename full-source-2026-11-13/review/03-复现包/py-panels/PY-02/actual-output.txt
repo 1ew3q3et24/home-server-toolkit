@@ -1,0 +1,93 @@
+
+==============================================================================
+PY-02  自动防御触发条件 / 恢复阈值（R1，离线；真实 503 影响为 R3）
+==============================================================================
+
+[1] 判定代码（原样）：
+ 109|     up = float(s.get("net_up_mbps") or 0)
+ 110|     down = float(s.get("net_down_mbps") or 0)
+ 111|     procs = top_procs()
+ 112|     top = procs[0] if procs else None
+ 113|     total_kbs = (up + down) * 125.0
+ 114|     allow_hit = bool(top and top["name"] in ALLOW and total_kbs > 0 and top["rate"] >= total_kbs * 0.6)
+ 115|     if allow_hit:
+ 116|         log("ALLOWLIST top=%s rate=%.1fKB/s total=%.1fKB/s" % (top["name"], top["rate"], total_kbs))
+ 117|     high_raw = up >= CAP_UP * HIGH or down >= CAP_DOWN * HIGH
+ 118|     high = high_raw and not allow_hit
+ 119|     normal = (not high_raw) or allow_hit
+
+[2] 恢复代码（原样）：
+ 136|     elif normal:
+ 137|         if is_mode:
+ 138|             if not st.get("normal_since"):
+ 139|                 st["normal_since"] = now
+ 140|                 log("NORMAL_START up=%.2f down=%.2f" % (up, down))
+ 141|             elif now - int(st["normal_since"]) >= RECOVER:
+ 142|                 mode_off()
+ 143|                 st["normal_since"] = None
+ 144|                 st["ua_set"] = False
+ 145|                 st["mode"] = False
+ 146|                 log("EXIT after 10m normal up=%.2f down=%.2f" % (up, down))
+ 147|         else:
+ 148|             st["normal_since"] = None
+ 149|     else:
+ 150|         st["normal_since"] = None
+
+[3] 进入模式后 nginx 的实际行为（原样）：
+   9| if [ "${1:-off}" = "on" ]; then
+  10|   NAMES=$(grep -h "server_name" /etc/nginx/sites-enabled/* 2>/dev/null | sed 's/server_name//; s/;//' | tr ' ' '\n' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' | grep -v '^$' | grep -v '^_' | grep -v '^localhost$' | grep -v '^ddos\.' | sort -u | tr '\n' ' ')
+  11|   cat > "$CONF" <<EOF
+  12| server {
+  13|     listen 80;
+  14|     server_name $NAMES;
+  15|     location ^~ /.well-known/acme-challenge/ { root /var/www/html; }
+  16|     location / { return 503; }
+  17|     error_page 503 /ddos.html;
+  18|     location = /ddos.html { root /var/www/ddos; internal; }
+  19| }
+  20| server {
+  21|     listen 443 ssl;
+  22|     http2 on;
+  23|     server_name $NAMES;
+  24|     ssl_certificate $CERT/fullchain.pem;
+  25|     ssl_certificate_key $CERT/privkey.pem;
+  26|     location ^~ /.well-known/acme-challenge/ { root /var/www/html; }
+  27|     location / { return 503; }
+  28|     error_page 503 /ddos.html;
+  29|     location = /ddos.html { root /var/www/ddos; internal; }
+  30| }
+  31| EOF
+
+[4] 控制台对“恢复条件”的说明（原样）：
+ 262| <p style="color:#6e7681;font-size:12px">Under Attack 会挑战所有访客。自动模式按带宽判断：上行/下行任一达到上限 80% 即进入防御；两者均回落到 50% 以下并持续 10 分钟，自动解除并恢复所有站点（ddos 控制台除外）。</p>
+
+[5] 场景 1：上行 6.5 Mbps（= 8 Mbps 上行的 81%，合法备份/世界同步很常见）
+    下行 0.5 Mbps、上行 6.5 Mbps -> 进入 DDoS 模式: True
+    ddos-mode.sh 调用: [(1764000000.0, 'on')]
+    Cloudflare 调用: [(1764000000.0, 'under_attack')]
+    触发线: 上行 8*0.8 = 6.4 Mbps（ddos-monitor.py:117）——低于运营商 8 Mbps 上行标称值
+
+[6] 场景 2：攻击者持续 13 Mbps 下行（>12 Mbps 触发线），模拟 40 分钟
+    40 分钟内 mode_off 次数: 0；当前仍在模式中: True
+    -> 攻击者只要维持 >12 Mbps 入向流量，全站 503 就不会解除；不需要任何凭据。
+
+[7] 场景 3：下行回落到 11.5 Mbps = 15 Mbps 的 76.7%（远高于文档承诺的 50%），观察恢复
+    是否解除: True
+    从开始回落到解除耗时: 600 秒（RECOVER=600s）
+    解除时下行仍为 11.5 Mbps，而 UI 写的是“两者均回落到 50%（7.5 Mbps）以下”
+    代码依据：normal = (not high_raw) or allow_hit（第 119 行），high_raw 用的是 80% 线；
+    NORMAL = 0.5 在 ddos-monitor.py 中定义后**从未被引用**。
+
+[8] 源码中除日志文本 NORMAL_START 之外所有出现 NORMAL 的行：
+    NORMAL = 0.5
+
+[9] 日志中的状态迁移：
+    2026-11-08T13:20:30 ENTER up=6.50 down=0.50
+    2026-11-08T13:20:31 NORMAL_START up=0.20 down=11.50
+    2026-11-08T13:20:31 EXIT after 10m normal up=0.20 down=11.50
+  [OK]   场景 1：6.5 Mbps 合法上行即触发全站 503（远低于名义上限 8 Mbps）
+  [OK]   场景 2：13 Mbps 持续流量把站点永久钉在 503 模式（外部可发起）
+  [OK]   场景 3：下行仍有 11.5 Mbps 时就解除防御（实现阈值 80% ≠ 文档 50%）
+  [OK]   NORMAL = 0.5 是死代码：文档承诺的 50% 恢复阈值从未实现
+
+RESULT: PASS  PY-02：防御可被低成本触发/钉死，且恢复阈值与文档不符

@@ -1,0 +1,37 @@
+=== 动作来自 GET (mcverify/index.php:8) ===
+   8| $action = (string)($_GET['action'] ?? '');
+
+=== 状态变更分支（只用 action，不校验 Origin/Token） ===
+  tos_agree    -> case 'tos_agree': {
+  tos_decline  -> case 'tos_decline': {
+  tos_accept   -> case 'tos_accept': {
+  logout       -> case 'logout': {
+
+=== mcverify 全文的 CSRF 防护元素 ===
+  HTTP_ORIGIN        = False
+  HTTP_REFERER       = False
+  csrf / token 变量    = False
+  SameSite 属性        = True
+
+=== 对照 chat/api.php:8-17 的 Origin/Referer 白名单（v2.1 声明所指） ===
+   8| // X-CSRF-ORIGIN: 写操作只接受本站 Origin/Referer
+   9| if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
+  10| $__o = (string)($_SERVER['HTTP_ORIGIN'] ?? '');
+  11| $__r = (string)($_SERVER['HTTP_REFERER'] ?? '');
+  12| $__src = $__o !== '' ? $__o : $__r;
+  13| if ($__src !== '') {
+  14| $__h = parse_url($__src, PHP_URL_HOST);
+  15| if ($__h !== 'chat.lzj2012.top') fail('跨站请求被拒绝', 403);
+  16| }
+  17| }
+
+=== 跨站触发推演（不实际请求） ===
+  受害者已登录 mcverify（Cookie: chq=...; SameSite=Lax）
+  攻击页面放：<a href="https://mcverify.lzj2012.top/?action=logout">抽奖</a>
+  受害者点击（顶层 GET 导航）-> Lax 允许携带 Cookie -> case 'logout' 执行
+  同理可触发 ?action=tos_agree（伪造同意记录）/?action=tos_accept（发 tos_ok 券）
+  也可用 window.location 赋值实现，无需点击（部分浏览器会拦，非全部）
+
+判定: mcverify 所有写操作均可由跨站顶层 GET 触发，且无任何二次确认；
+      与 v2.1『CSRF: api.php 对 POST 校验 Origin/Referer』的覆盖面声明不符。
+RESULT: 复现通过

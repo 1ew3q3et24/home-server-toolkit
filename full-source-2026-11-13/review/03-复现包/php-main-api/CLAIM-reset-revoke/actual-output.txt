@@ -1,0 +1,42 @@
+# actual-output.txt —— CLAIM-reset-revoke reset 改密吊销会话与设备（v2.1 声明）
+# 生成时间: 2026-11-08 13:11:17   耗时: 0.17s   退出码: 0
+# 命令: python.exe poc.py   （工作目录: CLAIM-reset-revoke）
+# 说明: 本输出由脚本真实执行产生；未联网、未访问生产环境。
+# ----------------------------------------------------------------------
+---- cloud/var/www/chat/api.php:156-174 ----
+ 156|   case 'reset': {
+ 157|     $email = strtolower(post('email'));
+ 158|     $code = post('code');
+ 159|     $pass = (string)($_POST['password'] ?? '');
+ 160|     if (!filter_var($email, FILTER_VALIDATE_EMAIL) || $code === '') fail('参数不全');
+ 161|     if (strlen($pass) < 6) fail('密码至少 6 位');
+ 162|     if (ip_bump('reset', 60) === false) fail('尝试次数过多, 请稍后再试', 429);
+ 163|     if (!check_code($email, 'reset', $code)) fail('验证码错误或已过期');
+ 164|     $salt = bin2hex(random_bytes(16));
+ 165|     $hash = 'pbkdf2$200000$' . $salt . '$' . hash_pbkdf2('sha256', $pass, $salt, 200000, 32);
+ 166|     db()->prepare('UPDATE users SET pass_hash = ?, verified = 1, sessions_valid_after = UNIX_TIMESTAMP() WHERE email = ?')->execute([$hash, $email]);
+ 167|     $__uid = (int)db()->prepare('SELECT id FROM users WHERE email = ?')->execute([$email]) ? 0 : 0;
+ 168|     $__q = db()->prepare('SELECT id FROM users WHERE email = ?'); $__q->execute([$email]); $__uid = (int)$__q->fetchColumn();
+ 169|     if ($__uid > 0) {
+ 170|       db()->prepare('UPDATE trusted_devices SET revoked_at = NOW() WHERE user_id = ? AND revoked_at IS NULL')->execute([$__uid]);
+ 171|     }
+ 172|     chat_log('重置密码', $email . ' ip=' . client_ip());
+ 173|     jout(['ok' => true]);
+ 174|   }
+-------------------
+
+  [是] 改密 UPDATE 里写 sessions_valid_after = UNIX_TIMESTAMP()
+  [是] 改密后吊销 trusted_devices（revoked_at）
+  [是] 改密不需要旧密码（凭邮箱验证码）
+  [是] 改密同时 verified = 1
+
+逻辑推演（旧会话签发于 T0，exp=T0+12h；改密时刻 R）：
+   R=T0-1：旧 Cookie -> 仍有效
+   R=T0+0：旧 Cookie -> 仍有效 <<< 同一秒边界(见 API-02)
+   R=T0+1：旧 Cookie -> 401
+
+设备令牌侧：trusted_devices.revoked_at 置位后，lib.php:211 的查询带 revoked_at IS NULL -> 旧设备令牌 401。
+结论：v2.1 的 reset 吊销声明在正常路径上成立（旧会话 401、设备令牌 401）；
+      唯一瑕疵是 lib.php:180 用 `>`，当“改密与旧会话签发落在同一秒”时不吊销（API-02 已单列）。
+
+RESULT: FIXED

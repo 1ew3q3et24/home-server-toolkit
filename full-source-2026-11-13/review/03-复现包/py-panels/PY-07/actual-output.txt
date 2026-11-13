@@ -1,0 +1,60 @@
+
+==============================================================================
+PY-07  CSRF 加固项 + 安全响应头缺失（R1，离线）
+==============================================================================
+
+[1] CSRF 代码（原样）：
+  98| def csrf_token():
+  99|     try:
+ 100|         a = json.load(open(AUTH))
+ 101|         ts = str(int(time.time()))
+ 102|         sig = hmac.new(bytes.fromhex(a["secret"]), ("ddos|" + ts).encode(), hashlib.sha256).hexdigest()[:24]
+ 103|         return ts + "." + sig
+ 104|     except Exception:
+ 105|         return ""
+ 106| 
+ 107| def csrf_ok(tok):
+ 108|     try:
+ 109|         a = json.load(open(AUTH))
+ 110|         ts, sig = tok.split(".", 1)
+ 111|         if time.time() - int(ts) > 3600:
+ 112|             return False
+ 113|         exp = hmac.new(bytes.fromhex(a["secret"]), ("ddos|" + ts).encode(), hashlib.sha256).hexdigest()[:24]
+ 114|         return hmac.compare_digest(exp, sig)
+ 115|     except Exception:
+ 116|         return False
+ 281|     if req.method == "POST":
+ 282|         if not csrf_ok(req.form.get("csrf", "")):
+ 283|             return redirect("/?msg=CSRF+校验失败")
+
+[2] 已登录访问 ddos 面板: HTTP 200，取得 csrf=1794115243.6c8699e12...
+
+[3] 响应头清单：
+    缺失的安全头: ['content-security-policy', 'x-frame-options', 'x-content-type-options', 'referrer-policy', 'permissions-policy']
+
+[4] 无令牌 POST（正常 CSRF 防护）:
+    HTTP 302 -> /?msg=CSRF+校验失败
+
+[5] 带令牌但伪造 Origin/Referer 的 POST：
+    HTTP 302 -> /?msg=已保存 0/10 项
+    ddospanel.py 是否读取 Origin/Referer: False
+
+[6] CSRF 令牌生命周期（不绑定会话/设备，1 小时可重放）：
+    +3599s 校验通过=True；+3601s 校验通过=False（窗口 3600 秒）
+    同一秒内两次 csrf_token() 相同=True（1794115243.6c8699e125a4cd4dada2f72a）
+
+[7] GET /logout 跨站可触发（状态变更走 GET，且无令牌）：
+    GET /logout: HTTP 200，cookie 数=0
+    -> 任意页面 <img src="https://ddos.lzj2012.top/logout"> 即可强制管理员退出
+
+[8] 点击劫持评估：没有 X-Frame-Options/CSP frame-ancestors，但会话 cookie 是 SameSite=Lax，
+    跨站 iframe 不携带 cookie，攻击者看到的是登录页 -> 当前不可利用，仍建议补安全头。
+
+[9] 另一个 GET：/login 无 CSRF（登录 CSRF）。单管理员场景危害≈0，仅记录。
+  [OK]   响应缺少 CSP/XFO/XCTO/Referrer-Policy 等安全头
+  [OK]   无令牌的 POST 被拒（CSRF 机制生效）
+  [OK]   服务端完全不校验 Origin/Referer（仅靠表单令牌）
+  [OK]   令牌 1 小时内可重放，不绑定会话/设备
+  [OK]   GET /logout 直接生效（可被跨站 img 触发）
+
+RESULT: PASS  PY-07：CSRF 为可用状态但缺少纵深防护；安全响应头缺失

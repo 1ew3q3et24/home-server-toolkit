@@ -1,0 +1,67 @@
+== 0. 源码事实（work/src 行号）==
+ddos-mode.sh:2 : set -euo pipefail
+ddos-mode.sh:10: NAMES=$(grep -h "server_name" /etc/nginx/sites-enabled/* 2>/dev/null | sed 's/server_name//; s/;//' | tr ' ' '\n' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' | ...
+ddos-mode.sh:11: cat > "$CONF" <<EOF
+ddos-mode.sh:32: touch /run/ddos-mode
+ddos-mode.sh:38: if ! nginx -t >/tmp/ddos-nginx-test.log 2>&1; then
+ddos-mode.sh:39: cp -a "$BAK" "$CONF" 2>/dev/null || : > "$CONF"
+ddos-mode.sh:40: nginx -t >>/tmp/ddos-nginx-test.log 2>&1 && systemctl reload nginx || true
+ddos-mode.sh:41: exit 1
+ddos-mode.sh:42: fi
+ddos-mode.sh:43: systemctl reload nginx
+
+[+] 顺序：touch 标志在第 32 行，nginx -t 在第 38 行 -> 先置标志后验证。
+[+] ddos-monitor.py 调用处（忽略返回码）：
+    ddos-monitor.py:65: subprocess.run(["/usr/local/sbin/ddos-mode.sh", "on"], capture_output=True, timeout=40)
+    ddos-monitor.py:69: subprocess.run(["/usr/local/sbin/ddos-mode.sh", "off"], capture_output=True, timeout=40)
+
+== 1. 用 4 组合成 sites-enabled 跑真实管道模型 ==
+  [A 正常]
+     阶段 rc: {'grep': 0, 'sed1': 0, 'tr1': 0, 'sed2': 0, 'vempty': 0, 'v_': 0, 'vlocal': 0, 'vddos': 0, 'sort': 0, 'tr2': 0}
+     NAMES = 'chat.lzj2012.top lzj2012.top '
+     生成行: server_name chat.lzj2012.top lzj2012.top ;
+
+  [B 含注释行]
+     阶段 rc: {'grep': 0, 'sed1': 0, 'tr1': 0, 'sed2': 0, 'vempty': 0, 'v_': 0, 'vlocal': 0, 'vddos': 0, 'sort': 0, 'tr2': 0}
+     NAMES = '# chat.lzj2012.top old.lzj2012.top '
+     生成行: server_name # chat.lzj2012.top old.lzj2012.top ;
+     -> 生成行含 '#'：nginx 把 '#' 当行注释，会吞掉结尾的 ';'，server_name 变成无参数 -> nginx -t 必失败。
+
+  [C 只有 _ 占位]
+     阶段 rc: {'grep': 0, 'sed1': 0, 'tr1': 0, 'sed2': 0, 'vempty': 0, 'v_': 1, 'vlocal': 1, 'vddos': 1, 'sort': 0, 'tr2': 0}
+     -> pipefail 非零，`set -e` 使脚本在赋值行(第10行)直接退出：不写 $CONF、不 touch 标志。
+
+  [D 引号+行尾注释]
+     阶段 rc: {'grep': 0, 'sed1': 0, 'tr1': 0, 'sed2': 0, 'vempty': 0, 'v_': 0, 'vlocal': 0, 'vddos': 0, 'sort': 0, 'tr2': 0}
+     NAMES = '"mc.lzj2012.top" # 主站 '
+     生成行: server_name "mc.lzj2012.top" # 主站 ;
+     -> 生成行含 '#'：nginx 把 '#' 当行注释，会吞掉结尾的 ';'，server_name 变成无参数 -> nginx -t 必失败。
+
+== 2. 判定 ==
+   正常配置可生成合法 NAMES              PASS
+   注释行会进 NAMES（含 #）             PASS
+   只有 _ 时管道 rc=1 / 中止           PASS
+   引号+行尾注释会进 NAMES（含 #）         PASS
+
+== 3. 状态机推演：失败一次之后 ==
+  场景 on：
+    ddos-mode.sh on
+      -> 写 $CONF (第11-31行)
+      -> touch /run/ddos-mode (第32行)   <-- 先置标志
+      -> nginx -t 失败 (第38行)
+      -> cp BAK CONF; nginx -t && reload || true; exit 1 (第39-41行)
+    结果: 配置回滚、标志存在、脚本 rc=1。
+    ddos-monitor.py:130 只在 `not is_mode` 时调用 mode_on() -> is_mode=True，
+    永不重试；且 ddos-monitor.py:65 不检查返回码 -> 静默。
+    => 攻击进行中 503 前置 server 实际未生效，且不会自愈。
+
+  场景 off（回滚目标错误）：
+    BAK 在第7行 = 本次调用开始时的 $CONF；若此时 $CONF 已是 503 配置，
+    off 先 `: > $CONF` + `rm -f /run/ddos-mode`(第34-35行)，nginx -t 失败后
+    `cp -a $BAK $CONF` 会把 **503 配置写回**，而标志已被删除。
+    ddos-monitor.py:100-104 的 reconcile 只处理“conf 非空且无标志”-> 会再次 mode_off
+    -> 只要 nginx -t 因别的原因持续失败，就形成 503 无法退出的自锁循环。
+
+VERDICT: REPRODUCED
+
+[exit code] 0

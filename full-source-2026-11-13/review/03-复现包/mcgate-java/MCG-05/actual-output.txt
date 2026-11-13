@@ -1,0 +1,54 @@
+FINDING: MCG-05 冻结期动作面不完整
+REPRO_LEVEL: R2
+
+== Gate.java 实际监听的 9 个事件 ==
+  onJoin         PlayerJoinEvent            priority=NORMAL
+  onMove         PlayerMoveEvent            priority=LOWEST
+  onBreak        BlockBreakEvent            priority=NORMAL
+  onPlace        BlockPlaceEvent            priority=NORMAL
+  onInteract     PlayerInteractEvent        priority=NORMAL
+  onDrop         PlayerDropItemEvent        priority=NORMAL
+  onDamage       EntityDamageEvent          priority=NORMAL
+  onChat         AsyncChatEvent             priority=LOWEST
+  onQuit         PlayerQuitEvent            priority=NORMAL
+
+== 能力 -> 事件 覆盖矩阵 ==
+能力                                 对应事件                                                 状态      
+----------------------------------------------------------------------------------------------------
+破坏方块                               BlockBreakEvent                                      已拦截     
+放置方块                               BlockPlaceEvent                                      已拦截     
+与方块交互                              PlayerInteractEvent                                  已拦截     
+丢弃物品                               PlayerDropItemEvent                                  已拦截     
+移动                                 PlayerMoveEvent                                      已拦截     
+公屏发言                               AsyncChatEvent                                       已拦截     
+受到伤害                               EntityDamageEvent                                    已拦截     
+执行命令(经济/传送/私聊/领地)                  PlayerCommandPreprocessEvent                         未拦截     
+攻击其他玩家/生物                          EntityDamageByEntityEvent(作为攻击方)                     未拦截     
+翻箱子/操作容器                           InventoryClickEvent / InventoryOpenEvent             未拦截     
+右键实体(交易/骑乘/盔甲架)                    PlayerInteractEntityEvent / PlayerInteractAtEntityEvent 未拦截     
+拾取地面物品                             EntityPickupItemEvent / PlayerPickupItemEvent        未拦截     
+吃/喝/换手物品                           PlayerItemConsumeEvent / PlayerSwapHandItemsEvent    未拦截     
+跨世界传送(传送门/命令)                      PlayerTeleportEvent / PlayerPortalEvent              未拦截     
+
+== 未拦截的能力(7 项) ==
+  - 执行命令(经济/传送/私聊/领地)  (需要监听 PlayerCommandPreprocessEvent)
+  - 攻击其他玩家/生物  (需要监听 EntityDamageByEntityEvent(作为攻击方))
+  - 翻箱子/操作容器  (需要监听 InventoryClickEvent / InventoryOpenEvent)
+  - 右键实体(交易/骑乘/盔甲架)  (需要监听 PlayerInteractEntityEvent / PlayerInteractAtEntityEvent)
+  - 拾取地面物品  (需要监听 EntityPickupItemEvent / PlayerPickupItemEvent)
+  - 吃/喝/换手物品  (需要监听 PlayerItemConsumeEvent / PlayerSwapHandItemsEvent)
+  - 跨世界传送(传送门/命令)  (需要监听 PlayerTeleportEvent / PlayerPortalEvent)
+
+  说明:
+   * EntityDamageEvent 处理器只判断 e.getEntity() 是否为冻结玩家(Gate.java:202-206),
+     因此冻结玩家作为'攻击方'时伤害不取消 => 可以杀其他玩家/动物/村民。
+   * PlayerInteractEvent 只覆盖方块右键; 实体右键是 PlayerInteractEntityEvent, 未监听
+     => 冻结玩家可以交易/骑乘/操作盔甲架与展示框。
+   * 命令完全未拦截 => /pay /msg /mail /kit /home /tpa 等全部可用(取决于权限插件),
+     可完成'验证前不该发生'的经济与社交行为, 也可借助 /tpa、/spawn 改变位置。
+
+== 判定标准 ==
+  监听集合与'应拦截能力'清单的差集非空 => 冻结策略可被绕过; 代码级静态判定(R2)。
+
+RESULT: VULNERABLE-STATIC
+gaps=7

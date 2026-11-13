@@ -1,0 +1,52 @@
+FINDING: MCG-08 plugin.yml 配置错误 / 依赖声明缺失 -> 闸门可整体消失
+REPRO_LEVEL: R2
+
+== plugin.yml 原文 (6 行) ==
+   1| name: McGate
+   2| version: 0.4.1
+   3| main: com.lzj.mcgate.McGate
+   4| api-version: "26.2"
+   5| author: lzj
+   6| description: "进服准入闸门: 未验证/被抽查玩家冻结 + 聊天室验证码解锁"
+
+== 检查结果 ==
+  1) api-version = '26.2' -> 是否符合 Bukkit '1.x' 格式: 否
+     Bukkit/Paper 把 api-version 解析为服务端版本, 高于当前服务端版本会抛
+     UnsupportedApiVersionException 并禁用插件; '26.2' 在 1.13~1.21 上不属于合法/受支持值。
+     包内没有 server.properties/服务端版本证据(nginx 与服务端配置缺失), 故加载结果只能
+     到真机确认; 但无论如何该值都不符合惯例, 属于部署风险。
+  2) main = com.lzj.mcgate.McGate -> 源文件是否存在: 是
+  3) Paper 专属 import: ['io.papermc.paper.event.player.AsyncChatEvent']
+     plugin.yml 未声明 depend/softdepend/libraries => 在 Spigot/CraftBukkit 上
+     io.papermc.paper.event.player.AsyncChatEvent 会 NoClassDefFoundError, registerEvents 失败,
+     插件被禁用(闸门消失)。
+  4) commands         声明: 无
+  4) permissions      声明: 无
+  4) depend           声明: 无
+  4) softdepend       声明: 无
+  4) load             声明: 无
+  4) libraries        声明: 无
+  4) folia-supported  声明: 无
+
+== 闸门失效后的残留控制(listener 未注册) ==
+  每次进服向后端查询(check)                           消失
+  已绑定玩家 15% 随机抽查(后端 mc_rate)                 消失
+  TOS 未同意即冻结                                 消失
+  移动/破坏/发言/伤害拦截                              消失
+  解锁后 whitelist add                          消失
+  服务器白名单(若有)                                 仍生效, 但只按'曾验证过'的名单放行
+
+  即: 插件没加载时, 服务器退化为'白名单即准入', 不再有抽查与 TOS 复检;
+  而白名单是本插件在验证成功时写入的 —— 一次验证 = 终身通行, 且没有任何告警。
+  这也解释了为什么'插件加载失败'在本域是高危静默降级: 控制台只有一行报错。
+
+== 附: 命令权限面 ==
+  plugin.yml 未声明 commands, McGate/Gate/Backend 也没有 onCommand 实现,
+  因此本插件不存在命令权限绕过问题(该项检查通过); 唯一的命令执行是
+  Gate.java:143 以控制台身份执行 whitelist add。
+
+== 判定标准 ==
+  api-version 非法 + Paper-only API + 无依赖声明 三项同时成立 => 静态确认(R2);
+  '该服务端是否真的加载失败'需真实 Paper 控制台确认(R3)。
+
+RESULT: VULNERABLE-STATIC

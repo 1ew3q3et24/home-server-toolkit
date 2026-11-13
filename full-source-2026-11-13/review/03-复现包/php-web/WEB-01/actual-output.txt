@@ -1,0 +1,45 @@
+=== mcverify login 分支 (mcverify/index.php:157-167) ===
+ 157| case 'login': {
+ 158|     $key = vp('key');
+ 159|     $pass = (string)($_POST['password'] ?? '');
+ 160|     if ($key === '' || $pass === '') fail('请填写账号和密码');
+ 161|     $u = find_user($key);
+ 162|     if (!$u || !pass_ok((string)$u['pass_hash'], $pass)) fail('账号或密码不对');
+ 163|     if ((int)$u['verified'] !== 1) fail('这个账号还没完成邮箱验证，请先在「注册」里完成验证');
+ 164|     set_session((int)$u['id']);
+ 165|     chat_log('[MC验证站]', 'login uid=' . (int)$u['id'] . ' ip=' . client_ip());
+ 166|     jout(['ok' => true, 'nickname' => $u['nickname'], 'need_tos' => empty($u['tos_agreed_at'])]);
+ 167|   }
+ 168| 
+ 169|   
+
+=== 对照：chat/api.php login 分支自带的三道闸 (api.php:176-204) ===
+  ip_bump('login'        in api.php login = True
+  login_fail_ok(         in api.php login = True
+  login_fail_bump(       in api.php login = True
+  ban_active(            in api.php login = True
+
+=== mcverify/index.php 全文（含 login 分支）对这些闸门的引用 ===
+  ip_bump(           = False
+  login_fail_ok(     = False
+  login_fail_bump(   = False
+  ban_active(        = False
+  login_fails 表      = False
+
+=== 等价控制流模拟：同一邮箱连续 1000 次错误口令 ===
+  attempt    1: 200/400 响应='账号或密码不对'，未触发 429；累计口令比对次数=1
+  attempt  100: 200/400 响应='账号或密码不对'，未触发 429；累计口令比对次数=100
+  attempt  500: 200/400 响应='账号或密码不对'，未触发 429；累计口令比对次数=500
+  attempt 1000: 200/400 响应='账号或密码不对'，未触发 429；累计口令比对次数=1000
+  1000 次全部到达 hash_pbkdf2（pbkdf2$200000），失败计数恒为 0 -> 无锁定/无冷却
+
+=== find_user 支持 邮箱 OR 昵称 登录（可撞库面扩大） ===
+     function find_user(string $key): ?array {
+       $st = db()->prepare('SELECT id, nickname, email, pass_hash, verified, tos_agreed_at FROM users WHERE email = ? OR nickname = ? LIMIT 1');
+       $st->execute([strtolower($key), $key]);
+       $r = $st->fetch();
+       return $r ?: null;
+     }
+
+判定: mcverify 登录分支缺失 登录失败计数/限流/封禁检查；1000 次尝试全部到达口令比对。
+RESULT: 复现通过

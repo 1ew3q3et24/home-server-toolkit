@@ -1,0 +1,59 @@
+# actual-output.txt —— CLAIM-admin-ban-seconds admin_ban seconds 整数校验（v2.1 声明）
+# 生成时间: 2026-11-08 13:11:16   耗时: 0.20s   退出码: 0
+# 命令: python.exe poc.py   （工作目录: CLAIM-admin-ban-seconds）
+# 说明: 本输出由脚本真实执行产生；未联网、未访问生产环境。
+# ----------------------------------------------------------------------
+---- cloud/var/www/chat/api.php:461-487 ----
+ 461|   case 'admin_ban': {
+ 462|     $me = mod_user();
+ 463|     $id = (int)post('id');
+ 464|     $t = db()->prepare('SELECT id, nickname, role, ban_count FROM users WHERE id = ?');
+ 465|     $t->execute([$id]);
+ 466|     $tg = $t->fetch();
+ 467|     if (!$tg) fail('用户不存在');
+ 468|     ensure_can_act_on($me, $tg);
+ 469|     $__raw_secs = post('seconds');
+ 470|     if ($__raw_secs !== '' && !preg_match('/^[0-9]+$/', $__raw_secs)) fail('封禁时长必须是整数秒');
+ 471|     $secs = (int)$__raw_secs;
+ 472|     if ($secs <= 0) { $secs = tier_seconds(min((int)$tg['ban_count'] + 1, 5)); }
+ 473|     if ($secs > tier_seconds(5)) {
+ 474|       if (!can_long_ban((int)$me['id'])) fail('长封(超过 1 年)需要群主或被授权的管理员', 403);
+ 475|       if ($secs > 20 * 31536000) $secs = 20 * 31536000;
+ 476|     }
+ 477|     $reason = mb_substr(post('reason'), 0, 128);
+ 478|     // 时间一律用数据库的 NOW(): PHP 是 UTC 而 MariaDB 是 +08, 混用会差 8 小时
+ 479|     $until = (string)db()->query('SELECT DATE_ADD(NOW(), INTERVAL ' . (int)$secs . ' SECOND)')->fetchColumn();
+ 480|     db()->prepare('INSERT INTO bans (user_id, type, by_id, reason, created_at, until) VALUES (?, "ban", ?, ?, NOW(), ?) ON DUPLICATE KEY UPDATE type = "ban", by_id = VALUES(by_id), reason = VALUES(reason), created_at = NOW(), until = VALUES(until)')->execute([$id, (int)$me['id'], $reason, $until]);
+ 481|     // 封号与拉黑同步时效: 二者一起走
+ 482|     db()->prepare('UPDATE bans SET until = ? WHERE user_id = ? AND type = "block"')->execute([$until, $id]);
+ 483|     db()->prepare('UPDATE users SET ban_count = ban_count + 1, sessions_valid_after = UNIX_TIMESTAMP() WHERE id = ?')->execute([$id]);
+ 484|     db()->prepare('UPDATE trusted_devices SET revoked_at = NOW() WHERE user_id = ? AND revoked_at IS NULL')->execute([$id]);
+ 485|     log_mod((int)$me['id'], $id, 'ban', $tg['nickname'] . ' ' . $secs . 's ' . $reason);
+ 486|     jout(['ok' => true, 'seconds' => $secs]);
+ 487|   }
+-------------------
+
+逐个输入判定（ban_count=0，操作人为群主）：
+  seconds='NaN'                                      -> HTTP 400            OK
+  seconds='abc'                                      -> HTTP 400            OK
+  seconds='-3600'                                    -> HTTP 400            OK
+  seconds='1e999'                                    -> HTTP 400            OK
+  seconds='1.5'                                      -> HTTP 400            OK
+  seconds='0x10'                                     -> HTTP 400            OK
+  seconds=''                                         -> HTTP 200 secs=3600  OK
+  seconds='0'                                        -> HTTP 200 secs=3600  OK
+  seconds='3600'                                     -> HTTP 200 secs=3600  OK
+  seconds=' 3600 '                                   -> HTTP 200 secs=3600  OK
+  seconds='999999'                                   -> HTTP 200 secs=999999 OK
+  seconds='31536001'                                 -> HTTP 200 secs=31536001 OK
+  seconds='9999999999999999999999999999999999999999' -> HTTP 200 secs=630720000 OK
+
+关键点核对：
+  * 'NaN' -> regex 不匹配 -> 400 ✓（v2.1 声明成立）
+  * 负数 '-3600' -> 400 ✓（不会出现“负封禁=立即解封”）
+  * 科学计数法 '1e999' -> 400 ✓
+  * 超长数字串 '9'*40 -> (int) 饱和为 PHP_INT_MAX -> 触发 can_long_ban -> 上限 630720000 秒（20 年）✓
+  * 权限校验顺序：api.php:462 `$me = mod_user()` 先于 api.php:469 解析 seconds ✓
+
+v2.1 声明『admin_ban 校验 seconds 必须为整数，NaN 返回 400』：**符合**（参数顺序也正确）。
+RESULT: FIXED

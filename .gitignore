@@ -1,0 +1,6 @@
+*.env
+token
+*.pem
+*.key
+id_ed25519*
+*.log

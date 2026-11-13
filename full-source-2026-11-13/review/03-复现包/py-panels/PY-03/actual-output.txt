@@ -1,0 +1,66 @@
+
+==============================================================================
+PY-03  DDoS 模式状态死角 / 面板与脚本状态不一致（R1，离线）
+==============================================================================
+
+==============================================================================
+PY-03-A  进入模式后 status.json 读不到 -> 永不自动解除(R1)
+==============================================================================
+
+[1] 触发代码（原样）：
+ 105|     try:
+ 106|         s = json.load(open(STATUS)).get("system", {})
+ 107|     except Exception:
+ 108|         return
+
+[2] 首次高带宽: 进入模式 = True
+[3] status.json 不存在后继续跑 30 分钟：仍在模式 = True，日志出现 EXIT = False
+    日志最后 3 行:
+      2026-11-08T13:20:32 ENTER up=0.30 down=13.00
+
+==============================================================================
+PY-03-B  underattack_until 只写不读（死字段）(R1: 全仓扫描)
+==============================================================================
+
+[1] 全仓库引用点：
+    cloud/var/www/logview/ddospanel.py:12  UA_UNTIL = "/var/lib/ddos-monitor/underattack_until"
+    cloud/var/www/logview/ddospanel.py:320  os.makedirs(os.path.dirname(UA_UNTIL), exist_ok=True)
+    cloud/var/www/logview/ddospanel.py:321  open(UA_UNTIL, "w").write(str(int(time.time()) + 7200))
+
+[2] 读取方数量: 0（只有写入，没有任何代码检查该时间戳）
+
+[3] 写入代码（原样）：
+ 319|         if values.get("security_level") == "under_attack":
+ 320|             os.makedirs(os.path.dirname(UA_UNTIL), exist_ok=True)
+ 321|             open(UA_UNTIL, "w").write(str(int(time.time()) + 7200))
+
+==============================================================================
+PY-03-C  ddos-mode.sh 失败时面板仍写 MODE 并提示成功(R1: shim test_client)
+==============================================================================
+
+[1] 登录: status=200 cookie 数=1
+[2] GET ddos 面板: status=200 取得 csrf=1794115232.b0d76...
+[3] POST action=mode_on -> status=302 Location=/?msg=已进入 DDoS 模式
+    实际执行的脚本调用: [['/usr/local/sbin/ddos-mode.sh', 'on']]
+    脚本返回值: 1（失败）
+    /run/ddos-mode 是否存在: True
+    审计日志: 2026-11-08T13:20:32+08:00 ip=127.0.0.1 mode_on
+    Cloudflare 调用: [('/zones?per_page=50', 'GET', None)]（全部失败）
+    Location 解码: /?msg=已进入 DDoS 模式
+
+==============================================================================
+PY-03-D  state.json 非原子写 / 无互斥锁（静态证据）
+==============================================================================
+
+[1] 写入代码（原样）：
+ 151|     json.dump(st, open(STATE, "w"))
+
+[2] ddos-monitor.py 中 flock/fcntl/lockf: False；使用 .tmp 原子替换: False
+    对比：logview-health.py:201-204 写 status.json 时用了 .tmp + os.replace。
+
+  [OK]   A：status.json 消失后 30 分钟仍卡在 DDoS 模式（全站 503 无法自愈）
+  [OK]   B：underattack_until 只写不读（2 小时自动恢复是空承诺）
+  [OK]   C：ddos-mode.sh 退出码 1 但面板仍写 MODE 并提示“已进入 DDoS 模式”
+  [OK]   D：state.json 非原子写且无 flock，可被并发/半写覆盖
+
+RESULT: PASS  PY-03：状态机死角与状态不一致

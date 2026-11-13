@@ -1,0 +1,38 @@
+# actual-output.txt —— API-12 分管员（ROLE_SUB）可批量导出全部用户邮箱
+# 生成时间: 2026-11-08 13:11:16   耗时: 0.20s   退出码: 0
+# 命令: python.exe poc.py   （工作目录: API-12-sub-email-exposure）
+# 说明: 本输出由脚本真实执行产生；未联网、未访问生产环境。
+# ----------------------------------------------------------------------
+---- cloud/var/www/chat/api.php:333-338 ----
+ 333|   case 'admin_users': {
+ 334|     mod_user();
+ 335|     $rows = db()->query('SELECT u.id, u.nickname, u.email, u.role, u.ban_count, u.del_count, u.long_ban_until, b.type AS ban, DATE_FORMAT(b.until, "%Y-%m-%d %H:%i") AS ban_until, DATE_FORMAT(b.created_at, "%Y-%m-%d %H:%i") AS ban_since, b.reason AS ban_reason, (SELECT nickname FROM users WHERE id = b.by_id) AS ban_by FROM users u LEFT JOIN bans b ON b.id = (SELECT x.id FROM bans x WHERE x.user_id = u.id AND (x.until IS NULL OR x.until > NOW()) ORDER BY (x.type = "ban") DESC, x.id DESC LIMIT 1) ORDER BY u.role DESC, u.id ASC')->fetchAll();
+ 336|     foreach ($rows as $i => $r) { $rows[$i]['role'] = (int)$r['role']; $rows[$i]['id'] = (int)$r['id']; $rows[$i]['ban_count'] = (int)$r['ban_count']; $rows[$i]['del_count'] = (int)$r['del_count']; }
+ 337|     jout(['ok' => true, 'users' => $rows]);
+ 338|   }
+-------------------
+---- cloud/var/www/chat-lib/lib.php:239-246 ----
+ 239| function require_role(int $min): array {
+ 240|   $u = require_login();
+ 241|   if (role_of($u) < $min) fail('权限不足', 403);
+ 242|   return $u;
+ 243| }
+ 244| 
+ 245| function admin_user(): array { return require_role(ROLE_ADMIN); }  // 管理员及以上
+ 246| function mod_user(): array { return require_role(ROLE_SUB); }      // 分管员及以上
+-------------------
+
+admin_users 的鉴权函数： mod_user()（ROLE_SUB 及以上）
+admin_users 返回字段是否含 email： 是 <<< 分管员可批量导出邮箱
+lib.php 角色定义：ROLE_USER=0 普通用户 / ROLE_SUB=1 分管员 / ROLE_ADMIN=2 管理员 / ROLE_OWNER=3 群主
+
+对比：
+   admin_bans     鉴权=mod_user()
+   admin_log      鉴权=mod_user()
+   admin_state    鉴权=admin_user()
+   admin_invite   鉴权=admin_user()
+
+结论：分管员的职责是删帖/禁言，业务上不需要看邮箱；
+      admin_users 对 ROLE_SUB 返回 u.email（且无分页/无审计），属最小权限缺失（P3 隐私）。
+      注：read-only 接口本身不构成 P2，但与 API-08（枚举）叠加后，一个被盗的分管员账号即可导出全员邮箱。
+RESULT: PASS

@@ -1,0 +1,75 @@
+# actual-output.txt —— API-03 验证码冷却/次数/一次性均为先查后写（TOCTOU 竞态）
+# 生成时间: 2026-11-08 13:11:13   耗时: 0.11s   退出码: 0
+# 命令: python.exe poc.py   （工作目录: API-03-verification-race）
+# 说明: 本输出由脚本真实执行产生；未联网、未访问生产环境。
+# ----------------------------------------------------------------------
+---- cloud/var/www/chat-lib/lib.php:342-359 ----
+ 342| function issue_code(string $email, string $purpose): void {
+ 343|   $pdo = db();
+ 344|   $st = $pdo->prepare('SELECT TIMESTAMPDIFF(SECOND, created_at, NOW()) AS age FROM codes WHERE email = ? AND purpose = ? AND used_at IS NULL ORDER BY id DESC LIMIT 1');
+ 345|   $st->execute([$email, $purpose]);
+ 346|   $age = $st->fetchColumn();
+ 347|   if ($age !== false && (int)$age < CODE_COOLDOWN) {
+ 348|     throw new RuntimeException('验证码刚发过, 请 ' . (CODE_COOLDOWN - (int)$age) . ' 秒后再试');
+ 349|   }
+ 350|   if (!ip_bump('sendcode', IP_SENDCODE_DAY)) throw new RuntimeException('今天该 IP 发验证码次数已达上限, 请明天再试');
+ 351|   $code = gen_code(6);
+ 352|   $nl = chr(10);
+ 353|   $body = '你的验证码是: ' . $code . $nl . $nl . (CODE_TTL / 60) . ' 分钟内有效, 请勿泄露给他人。' . $nl . '如果不是你本人操作, 忽略本邮件即可。';
+ 354|   if (!send_mail($email, '【聊天室】邮箱验证码', $body)) {
+ 355|     throw new RuntimeException('验证码发送失败，请稍后再试');
+ 356|   }
+ 357|   $pdo->prepare('INSERT INTO codes (email, purpose, code_hash, expires_at, created_at) VALUES (?, ?, ?, DATE_ADD(NOW(), INTERVAL ' . CODE_TTL . ' SECOND), NOW())')
+ 358|       ->execute([$email, $purpose, hash('sha256', $code)]);
+ 359| }
+-------------------
+---- cloud/var/www/chat-lib/lib.php:361-375 ----
+ 361| function check_code(string $email, string $purpose, string $code): bool {
+ 362|   $pdo = db();
+ 363|   $st = $pdo->prepare('SELECT id, code_hash, attempts FROM codes WHERE email = ? AND purpose = ? AND used_at IS NULL AND expires_at > NOW() ORDER BY id DESC LIMIT 1');
+ 364|   $st->execute([$email, $purpose]);
+ 365|   $row = $st->fetch();
+ 366|   if (!$row) return false;
+ 367|   $ok = hash_equals($row['code_hash'], hash('sha256', $code));
+ 368|   if (!$ok) {
+ 369|     $upd = $pdo->prepare('UPDATE codes SET attempts = attempts + 1, used_at = IF(attempts + 1 >= ' . CODE_MAX_TRY . ', NOW(), used_at) WHERE id = ?');
+ 370|     $upd->execute([(int)$row['id']]);
+ 371|     return false;
+ 372|   }
+ 373|   $pdo->prepare('UPDATE codes SET used_at = NOW() WHERE id = ?')->execute([(int)$row['id']]);
+ 374|   return true;
+ 375| }
+-------------------
+
+=== 1) issue_code 冷却竞态：同一邮箱两个并发请求 ===
+  请求 A SELECT age -> None
+  请求 B SELECT age -> None
+  两者都满足 `if ($age !== false && (int)$age < 60) throw` 的反面 -> 都继续往下走
+  请求 A 发信并 INSERT：mails=1 rows=1
+  请求 B 发信并 INSERT：mails=2 rows=2
+  结果：60 秒冷却被绕过，同一邮箱收到 2 封；串行时第二封应被 COOLDOWN 拒绝。
+
+=== 1b) 发信失败不写 codes -> 冷却不生效（IP 日限是唯一约束）===
+  第 0 次 issue_code -> SEND_FAILED(无 codes 行 -> 下一次仍无冷却)  rows=0
+  第 1 次 issue_code -> SEND_FAILED(无 codes 行 -> 下一次仍无冷却)  rows=0
+  第 2 次 issue_code -> SEND_FAILED(无 codes 行 -> 下一次仍无冷却)  rows=0
+  结果：连续失败 3 次都没有产生冷却行；仅靠 ip_bump('sendcode', 10/天) 兜底。
+
+=== 1c) 冷却按 (email, purpose) 计 -> 同一邮箱双 purpose 双发 ===
+  register 通道: SENT
+  reset    通道: SENT
+  结果：同一邮箱 60 秒内可拿到 2 封（register 与 reset 各一）。
+
+=== 2) check_code 的 attempts / used_at 非原子更新 ===
+  串行世界：最多 5 次错误猜测（attempts+1 >= 5 置 used_at）
+  并发世界：6 个请求都在任何 UPDATE 之前读到同一行快照 -> 全部进入密码比对
+  实际被受理的错误猜测次数：6（应为 5）
+  数据库最终 attempts=6 used=True
+
+=== 2b) 已作废的验证码仍可被“在途”请求使用 ===
+  5 次错误后数据库 used=True
+  在途请求用读取时刻的快照（used=False）判定 -> check_code 返回 True（验证码被用掉：True）
+
+结论：冷却/次数/一次性都在“先查后写”上，且没有唯一约束、行锁或条件 UPDATE；
+      并发即可：多发信、超次数试码、同一码并发使用两次。P2（限流/验证码竞态）。
+RESULT: PASS

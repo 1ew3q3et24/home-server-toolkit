@@ -1,0 +1,24 @@
+# 本文件由本机真实运行生成：
+# 命令: C:\Users\18012\.dsh\dsh-runtimes\dsh-primary-runtime\dependencies\python\python.exe work\repro\php-app-api\APPAPI-08\poc.py
+# 退出码: 0
+# ------------------------------------------------------------
+== 1) app-web-login 返回的是「可直接使用的签名 Cookie 值」，不是 Set-Cookie
+   分支内含 'cookie' 字段: True
+   分支内含 Set-Cookie / setcookie: False
+   分支内含 HttpOnly 字样: False
+   返回形如: chq=1002|1799999999|<64hex HMAC>   <- 没有 HttpOnly/Secure/SameSite 属性
+
+== 2) 服务端自己的 set_session 是带 HttpOnly 的（对照）
+   lib.php set_session 含 'httponly' = True
+   lib.php set_session 含 'secure'   = True
+   lib.php set_session 含 'samesite' = True
+   结论：HttpOnly 只在 lib.php 的 setcookie 路径生效；app_web_login 路径把它降级为 JS 可读。
+
+== 3) 客户端如何落盘（APK MainActivity.java:240-244）
+   CookieManager.getInstance().setCookie(CHAT, cookie);   <- 只有 name=value
+   客户端无任何手段补回 HttpOnly（浏览器 API 不允许 JS 路径设置 HttpOnly）
+
+结论：服务端把 12 小时会话令牌以明文 JSON 交给客户端，客户端只能写非 HttpOnly Cookie；
+      于是 App 内 WebView 里任何脚本（XSS/被注入的第三方 JS）都能 document.cookie 取走会话，
+      直到 12 小时过期（服务端没有按 UA/设备绑定该会话）。
+RESULT: PASS

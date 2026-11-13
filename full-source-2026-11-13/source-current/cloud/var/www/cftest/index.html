@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CF 路由测试</title>
+<style>body{font:16px/1.6 system-ui;background:#111;color:#eee;padding:2rem;max-width:640px;margin:auto}
+code{background:#222;padding:2px 6px;border-radius:4px}.ok{color:#5f5}</style></head>
+<body><h1>Cloudflare 路由测试页</h1>
+<p>服务器时间：<code id="t"></code></p>
+<p>该页面用于测量 Cloudflare 代理下的握手、TTFB 与丢包。</p>
+<p id="r">正在测量…</p>
+<script>
+document.getElementById('t').textContent=new Date().toISOString();
+(async()=>{let out=[];for(let i=0;i<5;i++){const s=performance.now();
+try{const r=await fetch('/?ping='+Date.now(),{cache:'no-store'});await r.text();
+out.push((performance.now()-s).toFixed(1)+'ms');}catch(e){out.push('err');}}
+document.getElementById('r').innerHTML='5 次请求耗时：<span class="ok">'+out.join(' / ')+'</span>';})();
+</script></body></html>

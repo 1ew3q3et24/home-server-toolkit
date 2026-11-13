@@ -1,0 +1,57 @@
+== 0. 源码事实（work/src 行号）==
+failover.sh:150: if [ "$ACTION" = "force-home" ]; then
+failover.sh:151: [ -n "$TARGET" ] || die "取不到家里 IP"
+failover.sh:152: [ "$(probe "$TARGET")" = "yes" ] || die "家里 25565 不可达, 拒绝 force-home"
+failover.sh:153: if systemctl is-active --quiet mc; then archive_cloud_world; systemctl stop mc; sleep 3; fi
+failover.sh:154: set_record home "$TARGET" || die "DNS 失败"
+failover.sh:155: set_record mc "$TARGET" || die "DNS 失败"
+failover.sh:156: echo HOME > "$STATE"; echo 0 > "$CNTF"; echo 0 > "$CNTO"; rm -f "$HOLD"; log "已强制切回家里 ($TARGET), 手动保持已解除"; exit 0
+failover.sh:236: log "=== 开始切回: 云端 -> 家里 ==="
+failover.sh:237: archive_cloud_world
+failover.sh:238: systemctl stop mc; sleep 3
+failover.sh:239: if set_record home "$TARGET" && set_record mc "$TARGET"; then
+failover.sh:240: echo HOME > "$STATE"; echo 0 > "$CNTF"; echo 0 > "$CNTO"; log "=== 切回完成 ==="
+failover.sh:241: else log "ERROR 切回失败, 云端 MC 已停"; fi
+failover.sh:144: prep_mc_memory
+failover.sh:145: touch "$BASE/.mc-start-ok"
+failover.sh:146: systemctl start mc; wait_for_port || die "云端 MC 起不来"
+failover.sh:147: if ! set_record mc "$CIP"; then systemctl stop mc; die "DNS 切换失败, 已停云端 MC"; fi
+failover.sh:148: echo CLOUD > "$STATE"; echo 0 > "$CNTF"; echo 0 > "$CNTO"; date +%s > "$HOLD"; log "已强制切到云端, 手动保持中 (不会自动切回)"; exit 0
+--- mc-watchdog.sh ---
+mc-watchdog.sh:24: state=$(cat "$STATE_FILE" 2>/dev/null) || state=HOME
+mc-watchdog.sh:25: if [ "$state" != "CLOUD" ]; then exit 0; fi   # 常态: 静默跳过, 不刷日志
+mc-watchdog.sh:27: st=$(systemctl is-active mc 2>/dev/null) || true
+mc-watchdog.sh:28: case "$st" in active|activating|reloading) echo "MC看护: MC 正在运行 ($st), 无需动作"; exit 0;; esac
+mc-watchdog.sh:51: echo "$now" >> "$RLOG"
+mc-watchdog.sh:54: sync; echo 1 > /proc/sys/vm/drop_caches 2>/dev/null || true
+mc-watchdog.sh:55: if systemctl start mc; then log "MC看护: 已发出 start mc"; else log "MC看护: start mc 返回非零 (下一轮视情况再试)"; fi
+
+[+] mc-watchdog.sh 中是否有 DNS/CF/防双写校验：否（只读 state）
+[+] failover.sh 中 state 与 DNS 的写入顺序：
+    force-home : 第154-155行写 DNS -> 第156行写 state（非原子）
+    auto 切回  : 第238-239行写 DNS -> 第240行写 state（非原子）
+    force-cloud: 第147行写 DNS   -> 第148行写 state（非原子）
+
+== 1. 枚举“部分失败 -> 下一轮 cron”的终态 ==
+   force-home 两写成功 crash_before_state=True        state=CLOUD dns_mc=1.2.3.4  mc_running=True  home_alive=True   <== 双写/错配
+   force-home 两写成功 crash_before_state=False       state=HOME  dns_mc=1.2.3.4  mc_running=False home_alive=True 
+   force-home 仅 home 记录成功 crash=True              state=CLOUD dns_mc=5.6.7.8  mc_running=True  home_alive=True   <== 双写运行
+   force-home 仅 home 记录成功 crash=False             state=CLOUD dns_mc=5.6.7.8  mc_running=True  home_alive=True   <== 双写运行
+   auto 切回 home 成功 mc 失败                          state=CLOUD dns_mc=5.6.7.8  mc_running=True  home_alive=True   <== 双写运行
+   auto 切回 两写成功(此处 state 也写了, 正常)                 state=HOME  dns_mc=1.2.3.4  mc_running=False home_alive=True 
+   force-cloud wait_port 失败 dns_ok=True           state=HOME  dns_mc=1.2.3.4  mc_running=True  home_alive=True   <== 双写/错配
+   force-cloud wait_port 失败 dns_ok=False          state=HOME  dns_mc=1.2.3.4  mc_running=True  home_alive=True   <== 双写/错配
+   两台 MC 同时运行的终态: 6 个（其中 mc 记录仍指家里的: 3 个）
+
+== 2. 关键路径逐帧 ==
+   t0 state=CLOUD dns_mc=5.6.7.8 mc_running=False（force-home 写 DNS 后进程被杀）
+   t1 写完 home/mc 记录，state 仍 CLOUD -> state=CLOUD dns_home=1.2.3.4 dns_mc=1.2.3.4
+   t2 cron 调 mc-watchdog -> mc_running=True  => 两台 MC 同时运行=True
+
+== 3. 结论 ==
+   state 是“意图”，DNS/mc 进程是“事实”，两者只靠顺序保证一致；
+   任何部分失败或 kill -9 都会留下不一致，watchdog 又会按意图拉起云端 MC。
+
+VERDICT: REPRODUCED
+
+[exit code] 0

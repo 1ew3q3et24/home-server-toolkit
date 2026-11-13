@@ -1,0 +1,36 @@
+=== 闸门原文 (mcverify/index.php:122-124) ===
+ 122| if ($action !== '' && !in_array($action, ['tos_accept','tos_agree','tos_decline','status'], true) && empty($_COOKIE['tos_ok'])) {
+ 123| jout(['ok' => false, 'error' => '请先同意用户协议'], 403);
+ 124| }
+
+=== 复刻闸门：不同客户端自造的 Cookie 值 ===
+action     无Cookie        tos_ok=0       tos_ok=x(伪造)  
+login      403 请先同意用户协议   403 请先同意用户协议   放行            
+register   403 请先同意用户协议   403 请先同意用户协议   放行            
+sendcode   403 请先同意用户协议   403 请先同意用户协议   放行            
+verify     403 请先同意用户协议   403 请先同意用户协议   放行            
+submit     403 请先同意用户协议   403 请先同意用户协议   放行            
+mine       403 请先同意用户协议   403 请先同意用户协议   放行            
+
+=== 免审发券：?action=tos_accept 不校验任何同意证据 ===
+ 152| case 'tos_accept': {
+ 153| setcookie('tos_ok', '1', ['expires'=>time()+86400*30, 'path'=>'/', 'secure'=>true, 'httponly'=>true, 'samesite'=>'Lax']);
+ 154| jout(['ok' => true]);
+  -> 任意未登录客户端 POST/GET /?action=tos_accept 即拿到 30 天有效的 tos_ok=1；
+     页面上的“同意并继续”按钮只是调用同一接口，勾选/阅读无服务端校验。
+
+=== 对比：真会话 Cookie 有 HMAC，tos_ok 没有 ===
+ 110| setcookie(COOKIE_NAME, $payload . '|' . sign($payload), [
+ 122| $v = $r . '.' . hash_hmac('sha256', 'decoy|' . $r, CHAT_SECRET);
+ 130| return hash_equals(hash_hmac('sha256', 'decoy|' . $p[0], CHAT_SECRET), $p[1]);
+  chq = uid|exp|HMAC_SHA256(uid|exp, CHAT_SECRET)  -> 不可伪造
+  tos_ok = 'tos_ok=1'（无签名、无 user 绑定、无过期校验） -> 可伪造
+  tos_ok 的 md5 = e9d1bf98fe6cacebcaf996d540cd7f56 （服务端根本不参与校验）
+
+=== 页面侧同样以 Cookie 明文存在与否决定是否显示闸门 (mcverify:398,423) ===
+ 398| var TOS_OK = <?= (empty($_COOKIE['tos_ok']) || $needTos) ? 'false' : 'true' ?>;
+ 399| var TOS_ACCOUNT = <?= $needTos ? 'true' : 'false' ?>;
+ 423| if(TOS_OK){gate.style.display="none";}else{window.showTosGate(TOS_ACCOUNT);}
+
+判定: 伪造 Cookie tos_ok=x 后所有 action 闸门放行；tos_ok=0 仍被拦（PHP empty 语义）
+RESULT: 复现通过

@@ -1,0 +1,22 @@
+# 本文件由本机真实运行生成：
+# 命令: C:\Users\18012\.dsh\dsh-runtimes\dsh-primary-runtime\dependencies\python\python.exe work\repro\php-app-api\APPAPI-06\poc.py
+# 退出码: 0
+# ------------------------------------------------------------
+== 1) 三个设备令牌/会话鉴权实现的对照
+   lib.php require_login()      含 ban_active = True   (自己实现+ban 检查)
+   app-api.php app_user()       含 ban_active = True   (自行实现+ban 检查)
+   app-wait.php w_user()        含 ban_active = False  (自行实现、无 ban 检查)
+
+== 2) 封禁账号调用 app-wait 的结果（按源码推演）
+   w_user() 校验：token_hash 存在 + revoked_at IS NULL + expires_at > NOW()
+   -> 通过；随后继续执行 w_pending() 并建立 SSE/长轮询推送通道
+   预期（修复后）：HTTP 403 {'ok':false,'error':'账号已被封禁'} 并停止推送
+
+== 3) 对照 v2.1 声明
+   合并包『零、v2.1 修复』：『鉴权：require_login 增加 ban_active 检查；被封账号调用 mc-api 返回 403』
+   事实：require_login() 确实已加（lib.php:230）；但 app-wait.php 未使用 require_login，
+         自建的 w_user() 没有 ban 检查，封禁账号仍能拿到 MC 审批推送（含验证码/链接）。
+
+结论：封禁检查只加在 lib.php 的 require_login() 上，任何自己实现设备令牌校验的入口
+      都能绕过它；app-wait.php 就是这样一个入口（app-api.php 是碰巧补了）。
+RESULT: PASS

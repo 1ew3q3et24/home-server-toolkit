@@ -1,0 +1,25 @@
+[APK-07] build.sh 多处阻塞/错配：签名口令文件缺失、versionCode 冲突、资源与工具链路径不可用
+复现级别: R1（keytool 子测试在本机实际执行）+ R2（其余静态断言）
+环境: Windows + Python 3.12 + JDK keytool；无 aapt2/d8/apksigner/android.jar/android-16 工具链
+检查对象: apk/build.sh, apk/src/AndroidManifest.xml, apk/src/res/drawable/splash.xml, apk/src/tools/make_icon.py
+R1  | keytool 实际执行: exit=0, lzj-release.jks=True, keystore.pass=True, key.pass=False
+R1  | 模拟 apksigner --key-pass file:D:\Desktop\新建文件夹\work\repro\apk-android\APK-07-build-sh-unreproducible\_kt_scratch\key.pass → FileNotFoundError=True
+PASS | R1：build.sh 只生成 keystore.pass，key.pass 从未创建（签名必失败）  [build.sh:12,14]
+PASS | apksigner 的 --key-pass 指向不存在的 key.pass  [build.sh:41]
+PASS | --key-pass 与 --ks-pass 指向不同文件（应都用 keystore.pass）  [build.sh:41]
+PASS | Manifest 声明 versionCode=3  [AndroidManifest.xml:4]
+PASS | aapt2 link 传入 --version-code 2（与清单 3 不一致；aapt2 会写入/覆盖清单值）  [build.sh:22]
+PASS | aapt2 link 依赖 -A "$SRC/assets"  [build.sh:22]
+PASS | 工程中不存在 apk/src/assets → aapt2 link 会因目录不存在失败（高可能）
+PASS | BT=$SDK/android-16 被当作 build-tools 目录使用，但 aapt2/d8/zipalign/apksigner 属于 build-tools 26+  [build.sh:4]
+PASS | android.jar 取 android-36（平台目录），与 BT 的 android-16 语义不一致  [build.sh:5]
+PASS | 脚本启用 pipefail  [build.sh:2]
+PASS | apksigner verify | head -6：head 提前关闭管道可致 SIGPIPE(141)，pipefail 下使构建在签名成功后失败  [build.sh:44]
+PASS | splash.xml 引用 @mipmap/ic_splash  [res/drawable/splash.xml:9]
+PASS | make_icon.py 不生成 ic_splash（只生成 ic_launcher/_bg/_fg）  [tools/make_icon.py:113-119]
+PASS | 合并包内不存在任何 ic_splash 资源 → aapt2 link 报资源缺失（高可能）
+PASS | make_icon.py 输出目录硬编码 /home/lzj（换机构建即失败）  [tools/make_icon.py:106]
+PASS | javac 只设 -classpath，未用 --release/Android bootclasspath → 可能编译通过但运行期 NoSuchMethod  [build.sh:25（本机无 android.jar，未验证“javac 通过”的声明）]
+PASS | zipalign 在签名之前执行（顺序正确，无需修改）  [build.sh:38,41]
+结论: 复现通过
+说明: 由于签名步骤在干净环境必然失败，v2.1 交付的 APK 不可能由本脚本在本机组装；“构建可复现/来源可验证”不成立（文档未声明构建通过，但脚本作为交付物必须可执行）。

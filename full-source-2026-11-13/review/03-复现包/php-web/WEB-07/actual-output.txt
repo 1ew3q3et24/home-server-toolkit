@@ -1,0 +1,30 @@
+=== 无事务/无行锁的证据 (mcverify/index.php:208-224) ===
+ 208| $st = db()->prepare('SELECT id, mc_name, (expires_at < NOW()) AS expired, submitted_at FROM mc_codes WHERE REPLACE(code, "-", "") = ? ORDER BY id DESC LIMIT 1');
+ 209| $st->execute([$norm]);
+ 210| $row = $st->fetch();
+ 211| if (!$row) fail('验证失败：找不到这个验证码，请核对游戏里的 8 位数字');
+ 212| if ($row['submitted_at'] !== null) fail('验证失败：这个码已经用过了，请回游戏里重新获取');
+ 213| if ((int)$row['expired'] === 1) fail('验证失败：验证码已过期（有效期 5 分钟），请回游戏里重新获取');
+ 214| $name = (string)$row['mc_name'];
+ 215| $chk = db()->prepare('SELECT user_id FROM mc_bindings WHERE mc_name = ?');
+ 216| $chk->execute([$name]);
+ 217| $owner = $chk->fetchColumn();
+ 218| if ($owner !== false && (int)$owner !== (int)$u['id']) {
+ 219| jout(['ok' => false, 'error' => '验证失败：这个游戏名已绑定其他账号，请在公共聊天室报备处理'], 409);
+ 220| }
+ 221| if ($owner === false) {
+ 222| db()->prepare('INSERT INTO mc_bindings (user_id, mc_name) VALUES (?, ?)')->execute([(int)$u['id'], $name]);
+ 223| }
+ 224| db()->prepare('UPDATE mc_codes SET user_id = ?, submitted_at = NOW() WHERE id = ?')->execute([(int)$u['id'], (int)$row['id']]);
+
+  其中没有任何：BEGIN/COMMIT、SELECT ... FOR UPDATE、
+  UPDATE mc_codes ... WHERE submitted_at IS NULL（带条件更新）
+  运行 1: 账号A=ok, 账号B=ok, mc_bindings=[(2, 'Notch'), (1, 'Notch')]
+
+=== 结论 ===
+  同一 8 位码在并发下可被两个账号同时判定成功，mc_bindings 出现两条同名绑定：
+  - 若 mc_bindings.mc_name 无 UNIQUE，则两账号共享同一 MC 身份（越权解锁游戏权限）；
+  - 若有 UNIQUE，则第二请求 INSERT 抛 PDOException，被外层 catch 转 500（脏 500 而非拒绝）。
+
+判定: 竞态成立（先查后改，无锁/无事务），修复 WEB-06 后即可实际利用。
+RESULT: 复现通过

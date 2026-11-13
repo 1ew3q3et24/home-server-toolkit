@@ -1,0 +1,6 @@
+[Unit]
+Description=Check public IPv4 and report to cloud
+
+[Service]
+Type=oneshot
+ExecStart=%h/heartbeat/ipcheck.sh

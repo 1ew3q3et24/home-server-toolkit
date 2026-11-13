@@ -1,0 +1,29 @@
+# 本文件由本机真实运行生成：
+# 命令: C:\Users\18012\.dsh\dsh-runtimes\dsh-primary-runtime\dependencies\python\python.exe work\repro\php-app-api\APPAPI-07\poc.py
+# 退出码: 0
+# ------------------------------------------------------------
+== 1) 服务端对任意 last 都立即返回（不等待变化）
+   last=''              sig='1,2,3' -> 返回方式=immediate, 耗时=0s （长轮询/SSE 应等待变化，实际立即返回）
+   last='1,2,3'         sig='1,2,3' -> 返回方式=immediate, 耗时=0s （长轮询/SSE 应等待变化，实际立即返回）
+   last=''              sig='1,2,3' -> 返回方式=immediate, 耗时=0s （长轮询/SSE 应等待变化，实际立即返回）
+   last='sig-unchanged' sig='1,2,3' -> 返回方式=immediate, 耗时=0s （长轮询/SSE 应等待变化，实际立即返回）
+
+== 2) 客户端紧循环放大（WatchService.java:40-50）
+   单次请求 RTT 假设 30ms -> 单台设备约 33 请求/秒
+    1 台后台常驻 APP -> 约 33 请求/秒；每个请求 = fopen/flock 两个锁文件 + 2~3 条 SQL（含 UPDATE trusted_devices.last_used_at）
+   10 台后台常驻 APP -> 约 333 请求/秒；每个请求 = fopen/flock 两个锁文件 + 2~3 条 SQL（含 UPDATE trusted_devices.last_used_at）
+   50 台后台常驻 APP -> 约 1667 请求/秒；每个请求 = fopen/flock 两个锁文件 + 2~3 条 SQL（含 UPDATE trusted_devices.last_used_at）
+
+== 3) 全局 4 个槽位（41-58 行）与紧循环叠加
+   app-wait.php:50-54 只创建 app-wait-slot-0..3 四个锁；并发 >4 时第 5 个请求 429。
+   正常用户与紧循环客户端抢同一组 4 个槽 -> 大量 429/Retry-After: 5，推送不可用。
+
+   源码核对 存在 `$first = true;`: True
+   源码核对 输出分支在等待分支之前: True
+   源码核对 SSE/长轮询 header 之后立即返回（无长连接保持）: True
+   源码核对 slot 只有 0..3 四个: True
+
+结论：`$first = true` 使 74-92 行循环在第一次迭代就命中 77 行并 exit，
+      长轮询/SSE 退化为「立即返回的普通轮询」；APK 侧 watch 循环无 sleep，
+      形成每设备数十请求/秒的请求风暴，且在全局 4 槽位下并发稍高即 429。
+RESULT: PASS

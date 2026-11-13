@@ -1,0 +1,24 @@
+﻿==============================================================================
+mcgate-java 复现物汇总 (解释器: C:\Users\18012\.dsh\dsh-runtimes\dsh-primary-runtime\dependencies\python\python.exe)
+==============================================================================
+ID       | 复现结论             | fix.md   | 级别   | 备注
+------------------------------------------------------------------------------
+MCG-01   | 复现通过             | 是        | R1   | rc=0 VULNERABLE
+MCG-02   | 需真实服务端           | 是        | R3   | rc=0 NEED-REAL-SERVER
+MCG-03   | 复现通过             | 是        | R2   | rc=0 VULNERABLE-STATIC
+MCG-04   | 复现通过             | 是        | R2   | rc=0 VULNERABLE-STATIC
+MCG-05   | 复现通过             | 是        | R2   | rc=0 VULNERABLE-STATIC
+MCG-06   | 复现通过             | 是        | R1   | rc=0 VULNERABLE
+MCG-07   | 复现通过             | 是        | R1   | rc=0 VULNERABLE
+MCG-08   | 复现通过             | 是        | R2   | rc=0 VULNERABLE-STATIC
+MCG-09   | 复现通过             | 是        | R1   | rc=0 VULNERABLE
+MCG-10   | 复现通过(静态)         | 是        | R1   | rc=0 CONFIRMED
+MCG-11   | 复现通过(静态)         | 是        | R2   | rc=0 CONFIRMED
+MCG-12   | 复现通过(静态)         | 是        | R2   | rc=0 CONFIRMED
+MCG-13   | 复现通过(静态)         | 是        | R2   | rc=0 CONFIRMED
+MCG-14   | 复现通过(静态)         | 是        | R2   | rc=0 CONFIRMED
+MCG-15   | 复现通过             | 是        | R2   | rc=0 VULNERABLE-STATIC
+------------------------------------------------------------------------------
+合计 15 项: R1/R2 复现通过 9, 静态确认 5, 需真实服务端 1, 失败 0; fix.md 齐全 15/15
+说明: 全部脚本均不访问 chat.lzj2012.top 或任何真实主机; 需真实服务端的项见各 README 的
+      复现步骤(在自有测试环境执行)。

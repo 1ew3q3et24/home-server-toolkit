@@ -1,0 +1,84 @@
+== 0. 源码事实（work/src 行号）==
+ddos-mode.sh:9: if [ "${1:-off}" = "on" ]; then
+ddos-mode.sh:10:   NAMES=$(grep -h "server_name" /etc/nginx/sites-enabled/* 2>/dev/null | sed 's/server_name//; s/;//' | tr ' ' '\n' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//' | grep -v '^$' | grep -v '^_' | grep -v '^localhost$' | grep -v '^ddos\.' | sort -u | tr '\n' ' ')
+ddos-mode.sh:11:   cat > "$CONF" <<EOF
+ddos-mode.sh:12: server {
+ddos-mode.sh:13:     listen 80;
+ddos-mode.sh:14:     server_name $NAMES;
+ddos-mode.sh:15:     location ^~ /.well-known/acme-challenge/ { root /var/www/html; }
+ddos-mode.sh:16:     location / { return 503; }
+ddos-mode.sh:17:     error_page 503 /ddos.html;
+ddos-mode.sh:18:     location = /ddos.html { root /var/www/ddos; internal; }
+ddos-mode.sh:19: }
+ddos-mode.sh:20: server {
+ddos-mode.sh:21:     listen 443 ssl;
+ddos-mode.sh:22:     http2 on;
+ddos-mode.sh:23:     server_name $NAMES;
+ddos-mode.sh:24:     ssl_certificate $CERT/fullchain.pem;
+ddos-mode.sh:25:     ssl_certificate_key $CERT/privkey.pem;
+ddos-mode.sh:26:     location ^~ /.well-known/acme-challenge/ { root /var/www/html; }
+ddos-mode.sh:27:     location / { return 503; }
+ddos-mode.sh:28:     error_page 503 /ddos.html;
+ddos-mode.sh:29:     location = /ddos.html { root /var/www/ddos; internal; }
+ddos-mode.sh:30: }
+ddos-mode.sh:31: EOF
+--- ddos-monitor 的 10 分钟自动退出（本域外但决定自锁时长）---
+ddos-monitor.py:13: RECOVER = 10 * 60
+ddos-monitor.py:141: elif now - int(st["normal_since"]) >= RECOVER:
+ddos-monitor.py:142: mode_off()
+ddos-monitor.py:146: log("EXIT after 10m normal up=%.2f down=%.2f" % (up, down))
+--- ddospanel.py 对“排除项”的文档承诺 ---
+ddospanel.py:262: <p style="color:#6e7681;font-size:12px">Under Attack 会挑战所有访客。自动模式按带宽判断：上行/下行任一达到上限 80% 即进入防御；两者均回落到 50% 以下并持续 10 分钟，自动解除并恢复所有站点（ddos 控制台除外）。</p>
+ddospanel.py:289: subprocess.run(["/usr/local/sbin/ddos-mode.sh", "on"], capture_output=True, timeout=40)
+ddospanel.py:294: subprocess.run(["/usr/local/sbin/ddos-mode.sh", "off"], capture_output=True, timeout=40)
+
+== 1. 生成的 503 server 里有那些放行/排除指令？==
+   allow        不存在
+   deny         不存在
+   geo          不存在
+   map          不存在
+   satisfy      不存在
+   auth_request 不存在
+   ACME 例外   2 处（仅 /.well-known/acme-challenge/ 放行）
+
+[+] 结论：503 规则对**所有** $NAMES 的站点都是 return 503，
+    除了 ACME 挑战路径，没有任何 HTTP 层的放行（无管理 IP、无健康检查路径、无面板域名例外）。
+
+== 2. 唯一的“排除项”：命名约定 ddos.* ==
+   ddos-mode.sh:10 片段: ... grep -v '^ddos\.' ...
+   => 只要 server_name 以 'ddos.' 开头就被排除，与“是不是管理面板”无关；
+      反之，管理面板叫别的名字就不会被排除。
+
+== 3. 用一组常见 vhost 名做推演：谁会 503、谁被排除 ==
+   - 控制台域名就是 ddos.lzj2012.top
+     进入 503 名单: chat.lzj2012.top lzj2012.top mc.lzj2012.top
+     被排除:       ddos.lzj2012.top
+   - 控制台叫 panel.lzj2012.top（不是 ddos.*）
+     进入 503 名单: chat.lzj2012.top lzj2012.top mc.lzj2012.top panel.lzj2012.top
+     被排除:       （无）
+     <== 管理面 503：面板无法访问 -> 只能 SSH 或等 10 分钟自动退出
+   - 控制台叫 logview.lzj2012.top
+     进入 503 名单: chat.lzj2012.top logview.lzj2012.top
+     被排除:       （无）
+     <== 管理面 503：面板无法访问 -> 只能 SSH 或等 10 分钟自动退出
+
+   注：真实站点集合无法确认（`etc/nginx/sites-enabled/ddos` 未交付），
+       因此“到底哪个域名被排除”属于审查盲区。
+
+== 4. ddos-allowlist.json 是不是 HTTP 排除项？==
+   文件内容: {"allow": ["hbbs", "hbbr", "rustdesk", "java", "paper", "minecraft", "sshd", "systemd", "fail2ban-server", "x11vnc", "msedge"]}
+   条目数=11；含 IP 字面量=False；含域名=False
+   => 该文件只被 ddos-monitor.py:16 用作 nethogs 进程名白名单，
+      与 nginx 的 503 前置 server 没有任何关系，不能当 HTTP 排除项用。
+      （它的缺陷见 SH-09）
+
+== 5. 自锁评估 ==
+   可恢复路径 1：SSH 登录后 `/usr/local/sbin/ddos-mode.sh off`（需要 root 权限）。
+   可恢复路径 2：ddos-monitor 判定带宽回落并连续 10 分钟正常 -> 自动 mode_off。
+                 该路径依赖 status.json 持续写入且 nginx -t 能通过（见 SH-02/SH-12）。
+   不可恢复情形：sshd 之外的运维入口（面板/API）全部 503，且自动退出被 SH-02 的
+                 标志/回滚缺陷卡死 -> 只能 SSH。
+
+VERDICT: REPRODUCED
+
+[exit code] 0

@@ -1,0 +1,51 @@
+== 0. 源码事实（work/src 行号）==
+failover.sh:105: CUR=$(cat "$STATE" 2>/dev/null || echo HOME)
+failover.sh:106: TARGET=$(home_target)
+failover.sh:107: RT=$(cat "$LASTR" 2>/dev/null || echo "")
+failover.sh:108: 
+failover.sh:109: # ---- 家里上报的 IP 变了 -> 云端负责修 DNS ----
+failover.sh:110: if [ -n "$TARGET" ] && [ "$TARGET" != "$RT" ]; then
+failover.sh:111:   log "收到家里上报 IP: ${RT:-无} -> $TARGET"
+failover.sh:112:   # 修 (2026-10-06): 时间戳只在 IP 真变更时写。原来这一句写在上面、每轮无条件执行 -> IPAGE 永远<90 -> 守卫永久成立 -> fail_n 被反复清零 -> 家里失联也永不切换。
+failover.sh:113:   date +%s > "$BASE/ip_changed_at"
+failover.sh:114:   set_record home "$TARGET" || log "WARN 更新 home 记录失败"
+failover.sh:115:   if [ "$CUR" = "HOME" ]; then set_record mc "$TARGET" || log "WARN 更新 mc 记录失败"; fi
+failover.sh:116:   echo "$TARGET" > "$LASTR"
+failover.sh:117: fi
+--- cf-set-a.sh 失败路径 ---
+cf-set-a.sh:14: ZID=$("${CURL[@]}" "$API/zones?name=$ZONE" | jq -r '.result[0].id // empty')
+cf-set-a.sh:19: [ -n "$RID" ] || { echo "ERR no-record $NAME"; exit 1; }
+cf-set-a.sh:23: if printf '%s' "$OUT" | jq -e '.success==true' >/dev/null 2>&1; then echo "OK $NAME -> $WANT"; exit 0; fi
+cf-set-a.sh:24: echo "FAIL $NAME $(printf '%s' "$OUT" | jq -c '.errors')"; exit 1
+
+[+] failover.sh:116 `echo "$TARGET" > "$LASTR"` 与第114-115行的成功与否无关；
+    cf-set-a.sh 失败时 exit 1（第15/19/24行），但调用方只 log WARN，然后照样推进 LASTR。
+
+== 1. 时间线：家里 IP 变了，但 Cloudflare 短暂 502（前两次调用失败）==
+   第1轮 家里 IP 未变                                       dns_home=1.1.1.1  dns_mc=1.1.1.1  la_str=1.1.1.1 
+   第2轮 IP 变了；CF 502 -> home/mc 写入都失败                  dns_home=1.1.1.1  dns_mc=1.1.1.1  la_str=2.2.2.2 
+   第3轮 CF 恢复，但本轮不会尝试（TARGET==LASTR）                   dns_home=1.1.1.1  dns_mc=1.1.1.1  la_str=2.2.2.2 
+   第4轮 同上                                             dns_home=1.1.1.1  dns_mc=1.1.1.1  la_str=2.2.2.2 
+   第5轮 同上                                             dns_home=1.1.1.1  dns_mc=1.1.1.1  la_str=2.2.2.2 
+
+   最终：DNS 仍是 OLD=1.1.1.1，而家里真实 IP=2.2.2.2 -> 玩家全部连不上；
+   由于第113行写入 ip_changed_at，接下来 90 秒内 IPAGE<90 还会把 fail_n 清零，
+   连“失联切换”也一并被抑制（fail-open）。
+
+   [判定] 5 轮后 DNS 未修复且 LASTR 已推进: 是
+
+== 2. 对照：只有写成功才推进 LASTR（正确行为）==
+   第1轮 家里 IP 未变                                       dns_home=1.1.1.1  dns_mc=1.1.1.1  la_str=1.1.1.1 
+   第2轮 IP 变了；CF 502 -> home/mc 写入都失败                  dns_home=1.1.1.1  dns_mc=1.1.1.1  la_str=1.1.1.1 
+   第3轮 CF 恢复，但本轮不会尝试（TARGET==LASTR）                   dns_home=2.2.2.2  dns_mc=2.2.2.2  la_str=2.2.2.2 
+   第4轮 同上                                             dns_home=2.2.2.2  dns_mc=2.2.2.2  la_str=2.2.2.2 
+   第5轮 同上                                             dns_home=2.2.2.2  dns_mc=2.2.2.2  la_str=2.2.2.2 
+   [判定] 第3轮 CF 恢复后自动补上: 是
+
+== 3. 同类问题：force-home 两步 DNS 写入无回滚（failover.sh:154-155）==
+   set_record home 成功、set_record mc 失败 -> `|| die` 退出，
+   home 记录已指向家里、mc 记录仍指云端（或旧值）-> 半配置状态，无自动修复。
+
+VERDICT: REPRODUCED
+
+[exit code] 0

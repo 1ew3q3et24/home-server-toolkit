@@ -1,0 +1,10 @@
+[Unit]
+Description=DDoS bandwidth monitor
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/ddos-monitor.py
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,71 @@
+# actual-output.txt —— API-06 AI 审批 ban_user / upload_deny 不吊销会话与设备令牌
+# 生成时间: 2026-11-08 13:11:14   耗时: 0.29s   退出码: 0
+# 命令: python.exe poc.py   （工作目录: API-06-ai-ban-no-revoke）
+# 说明: 本输出由脚本真实执行产生；未联网、未访问生产环境。
+# ----------------------------------------------------------------------
+---- cloud/var/www/chat/api.php:461-487 ----
+ 461|   case 'admin_ban': {
+ 462|     $me = mod_user();
+ 463|     $id = (int)post('id');
+ 464|     $t = db()->prepare('SELECT id, nickname, role, ban_count FROM users WHERE id = ?');
+ 465|     $t->execute([$id]);
+ 466|     $tg = $t->fetch();
+ 467|     if (!$tg) fail('用户不存在');
+ 468|     ensure_can_act_on($me, $tg);
+ 469|     $__raw_secs = post('seconds');
+ 470|     if ($__raw_secs !== '' && !preg_match('/^[0-9]+$/', $__raw_secs)) fail('封禁时长必须是整数秒');
+ 471|     $secs = (int)$__raw_secs;
+ 472|     if ($secs <= 0) { $secs = tier_seconds(min((int)$tg['ban_count'] + 1, 5)); }
+ 473|     if ($secs > tier_seconds(5)) {
+ 474|       if (!can_long_ban((int)$me['id'])) fail('长封(超过 1 年)需要群主或被授权的管理员', 403);
+ 475|       if ($secs > 20 * 31536000) $secs = 20 * 31536000;
+ 476|     }
+ 477|     $reason = mb_substr(post('reason'), 0, 128);
+ 478|     // 时间一律用数据库的 NOW(): PHP 是 UTC 而 MariaDB 是 +08, 混用会差 8 小时
+ 479|     $until = (string)db()->query('SELECT DATE_ADD(NOW(), INTERVAL ' . (int)$secs . ' SECOND)')->fetchColumn();
+ 480|     db()->prepare('INSERT INTO bans (user_id, type, by_id, reason, created_at, until) VALUES (?, "ban", ?, ?, NOW(), ?) ON DUPLICATE KEY UPDATE type = "ban", by_id = VALUES(by_id), reason = VALUES(reason), created_at = NOW(), until = VALUES(until)')->execute([$id, (int)$me['id'], $reason, $until]);
+ 481|     // 封号与拉黑同步时效: 二者一起走
+ 482|     db()->prepare('UPDATE bans SET until = ? WHERE user_id = ? AND type = "block"')->execute([$until, $id]);
+ 483|     db()->prepare('UPDATE users SET ban_count = ban_count + 1, sessions_valid_after = UNIX_TIMESTAMP() WHERE id = ?')->execute([$id]);
+ 484|     db()->prepare('UPDATE trusted_devices SET revoked_at = NOW() WHERE user_id = ? AND revoked_at IS NULL')->execute([$id]);
+ 485|     log_mod((int)$me['id'], $id, 'ban', $tg['nickname'] . ' ' . $secs . 's ' . $reason);
+ 486|     jout(['ok' => true, 'seconds' => $secs]);
+ 487|   }
+-------------------
+---- cloud/var/www/chat/ai-bot-action.php:76-98 ----
+  76| if ($action === 'ban_user') {
+  77|     $id = (int)($p['user_id'] ?? 0);
+  78|     if ($id <= 0) aa_out(['ok' => false, 'error' => '用户 ID 无效'], 400);
+  79|     $st = db()->prepare('SELECT id, nickname, role, ban_count FROM users WHERE id = ?');
+  80|     $st->execute([$id]);
+  81|     $tg = $st->fetch();
+  82|     if (!$tg) aa_out(['ok' => false, 'error' => '用户不存在'], 404);
+  83|     ensure_can_act_on($me, $tg);
+  84|     $secs = (int)($p['seconds'] ?? 0);
+  85|     if ($secs <= 0) $secs = tier_seconds(min((int)$tg['ban_count'] + 1, 5));
+  86|     if ($secs > tier_seconds(5)) {
+  87|         if (!can_long_ban($uid)) aa_out(['ok' => false, 'error' => '长封需要群主或被授权管理员'], 403);
+  88|         if ($secs > 20 * 31536000) $secs = 20 * 31536000;
+  89|     }
+  90|     $reason = mb_substr((string)($p['reason'] ?? ''), 0, 128);
+  91|     $until = (string)db()->query('SELECT DATE_ADD(NOW(), INTERVAL ' . (int)$secs . ' SECOND)')->fetchColumn();
+  92|     db()->prepare('INSERT INTO bans (user_id, type, by_id, reason, created_at, until) VALUES (?, "ban", ?, ?, NOW(), ?) ON DUPLICATE KEY UPDATE type = "ban", by_id = VALUES(by_id), reason = VALUES(reason), created_at = NOW(), until = VALUES(until)')->execute([$id, $uid, $reason, $until]);
+  93|     db()->prepare('UPDATE bans SET until = ? WHERE user_id = ? AND type = "block"')->execute([$until, $id]);
+  94|     db()->prepare('UPDATE users SET ban_count = ban_count + 1 WHERE id = ?')->execute([$id]);
+  95|     log_mod($uid, $id, 'ai_ban', $tg['nickname'] . ' ' . $secs . 's ' . $reason);
+  96|     ai_log('uid=' . $uid . ' action=ban_user target=' . $id . ' seconds=' . $secs);
+  97|     aa_out(['ok' => true, 'action' => 'ban_user', 'seconds' => $secs]);
+  98| }
+-------------------
+
+三处“封禁”实现是否同时做会话吊销 + 设备吊销：
+  api.php admin_ban（管理面板）                        sessions_valid_after=有     trusted_devices=有     -> 已吊销
+  ai-bot-action.php ban_user（AI 审批）              sessions_valid_after=无     trusted_devices=无     -> 未吊销 <<<
+  lib.php upload_deny（上传违规永久封禁）                  sessions_valid_after=无     trusted_devices=无     -> 未吊销 <<<
+
+后果（配合 app-wait.php:20 w_user() 只查 trusted_devices 不查 bans）：
+  * AI 审批封禁 / 上传违规封禁后，目标用户的 90 天设备令牌仍然有效；
+  * api.php 与 app-api.php 每次请求都会 ban_active() 复查，故主站 API 仍会 403；
+  * 但 app-wait.php 的 w_user() 不做 ban 校验，被“未吊销令牌 + 未校验封禁”的端点继续可用；
+  * 且 v2.1 声称“封禁同时吊销目标会话/设备”，只有 admin_ban 做到了，其余两条路径是修不全 [文档声言不符]。
+RESULT: PASS

@@ -1,0 +1,75 @@
+== 0. 源码事实（work/src 行号）==
+failover.sh:16: HB_TIMEOUT=45
+failover.sh:17: FAIL_THRESHOLD=2
+failover.sh:19: FAIL_THRESHOLD_HB=5
+failover.sh:20: OK_THRESHOLD=2
+failover.sh:32: # 启动云端 MC 前先腾内存: 释放可回收页缓存(只 drop pagecache=1, 不动 dentry/inode), 尽量避免动用 swap
+failover.sh:33: prep_mc_memory() {
+failover.sh:34:   local before after
+failover.sh:35:   before=$(awk '/MemAvailable/{print int($2/1024)}' /proc/meminfo)
+failover.sh:36:   sync
+failover.sh:37:   echo 1 > /proc/sys/vm/drop_caches 2>/dev/null || true
+failover.sh:38:   after=$(awk '/MemAvailable/{print int($2/1024)}' /proc/meminfo)
+failover.sh:39:   log "启动云端 MC 前腾内存: MemAvailable ${before}MB -> ${after}MB (swap 已用 $(awk '/SwapTotal/{t=$2}/SwapFree/{f=$2}END{print int((t-f)/1024)}' /proc/meminfo)MB)"
+failover.sh:40: }
+failover.sh:71: exec 8>"$BASE/.lock"
+failover.sh:72: flock -n 8 || { echo "已有实例在运行, 跳过"; exit 0; }
+failover.sh:122:   # 安全校验: 家里 MC 仍在写世界时, 先等它停止 (最多 10 分钟), 绝不双写
+failover.sh:123:   alive_out=$(/usr/local/sbin/home-mc-alive.sh 2>>"$LOG") || { log "ERROR 防双写检查执行失败, 拒绝切云"; exit 4; }
+failover.sh:124:   case "$alive_out" in
+failover.sh:126:       log "手动接管: 家里 MC 仍在运行, 等待停止 (最多 10 分钟)"
+failover.sh:127:       for i in $(seq 1 120); do
+failover.sh:128:         alive_out=$(/usr/local/sbin/home-mc-alive.sh 2>>"$LOG") || { log "ERROR 防双写检查执行失败, 拒绝切云"; exit 4; }
+failover.sh:129:         case "$alive_out" in
+failover.sh:130:           "0 "*) break;;
+failover.sh:131:           "1 "*) :;;
+failover.sh:132:           *) log "ERROR 防双写检查输出异常: $alive_out"; exit 4;;
+failover.sh:133:         esac
+failover.sh:134:         sleep 5
+failover.sh:135:       done
+failover.sh:136:       case "$alive_out" in
+failover.sh:137:         "1 "*) log "手动接管取消: 家里 MC 仍未停止"; exit 3;;
+failover.sh:144:   prep_mc_memory
+failover.sh:145:   touch "$BASE/.mc-start-ok"
+failover.sh:146:   systemctl start mc; wait_for_port || die "云端 MC 起不来"
+failover.sh:147:   if ! set_record mc "$CIP"; then systemctl stop mc; die "DNS 切换失败, 已停云端 MC"; fi
+failover.sh:215:   prep_mc_memory
+failover.sh:216:   touch "$BASE/.mc-start-ok"
+failover.sh:217:   systemctl start mc || log "WARN mc 启动返回非零"
+failover.sh:218:   wait_for_port || die "云端 MC 起不来, 放弃切换"
+--- home-mc-alive.sh 的探测超时 ---
+home-mc-alive.sh:23: if timeout 5 bash -c "</dev/tcp/$ip/25565" 2>/dev/null; then
+--- mc-watchdog.sh 的 drop_caches ---
+mc-watchdog.sh:54: sync; echo 1 > /proc/sys/vm/drop_caches 2>/dev/null || true
+
+== 1. “最多 10 分钟” vs 实际上限 ==
+   循环次数=120（第127行），每轮最坏=探测5 s + sleep 5 s = 10 s
+   最坏总耗时 = 1200 s = 20 分钟（注释写“最多 10 分钟”）
+   => 注释与实际差 10 分钟；期间 failover 一直持锁，其它实例被跳过。
+
+== 2. die 路径留下已启动的云端 MC ==
+   failover.sh:146 `systemctl start mc`；failover.sh:146 `wait_for_port || die`
+   die 只写日志/exit 1，不停 mc -> 若 DNS 仍指家里，云端 MC 会在后台运行
+   （与 SH-03 的 state/DNS 分离叠加，就是双写窗口）。
+
+== 3. 每次尝试都 drop_caches ==
+   failover.sh 中 drop_caches 位置: [37]；mc-watchdog.sh:54 也有一处
+   prep_mc_memory 在 force-cloud（第144行）与自动切云（第215行）各调一次，
+   watchdog 每次 start 前再 drop 一次 -> 同一事件可能连续 drop 2~3 次。
+
+== 4. 无 set -e：中间失败被忽略 ==
+   failover.sh:4 = 'set -uo pipefail'（只有 -u -o pipefail，没有 -e）
+   第21行 mkdir、第145行 touch、第113/116/148/156行 echo > 文件 都可能失败而不报。
+
+== 5. 阈值/超时与 cron 周期的隐含耦合 ==
+   failover.sh:16: HB_TIMEOUT=45
+   failover.sh:17: FAIL_THRESHOLD=2
+   failover.sh:19: FAIL_THRESHOLD_HB=5
+   failover.sh:20: OK_THRESHOLD=2
+   HB_TIMEOUT=45s、FAIL_THRESHOLD=2：若 cron 周期是 1 分钟，
+   心跳过期判定与“2 次失败”判定都依赖 cron 未被延迟（crontab 未交付，无法核对）。
+   flock -n 的跳过分支 exit 0：人工 force-cloud 若撞上自动轮次，会被静默跳过。
+
+VERDICT: REPRODUCED
+
+[exit code] 0

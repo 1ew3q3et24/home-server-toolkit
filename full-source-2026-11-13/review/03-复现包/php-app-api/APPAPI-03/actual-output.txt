@@ -1,0 +1,33 @@
+# 本文件由本机真实运行生成：
+# 命令: C:\Users\18012\.dsh\dsh-runtimes\dsh-primary-runtime\dependencies\python\python.exe work\repro\php-app-api\APPAPI-03\poc.py
+# 退出码: 2
+# ------------------------------------------------------------
+# 说明：本条目标记为 R3（端到端需真实浏览器/部署环境）。本文件是 poc.py 在本机
+# 实际跑出的静态证明输出；端到端 CSRF/点击劫持报文未在本机执行，所需环境与复制用
+# HTML/curl 报文见同目录 README.md（禁止对生产环境执行）。
+# ------------------------------------------------------------
+== 1) 静态证明：mc-api.php 没有任何 Origin/Referer 校验
+   mc-api.php 含 HTTP_ORIGIN = False；含 HTTP_REFERER = False
+   对照 api.php 含 HTTP_ORIGIN = True（api.php:8-17，v2.1 唯一实现处）
+
+== 2) 静态证明：两个 Cookie 认证的写操作
+   approve_link 需要登录(require_login)=True；写操作(INSERT/UPDATE)=True；Origin 校验=False
+   submit       需要登录(require_login)=True；写操作(INSERT/UPDATE)=True；Origin 校验=False
+
+== 3) 静态证明：approve.php 无防套框头
+   含 X-Frame-Options = False；含 CSP = False
+
+== 4) 完整攻击链（R3，需真实浏览器/测试环境，本机未执行）
+   a. 受害者在 chat.lzj2012.top 已登录（chq Cookie，SameSite=Lax，host-only）；
+   b. 攻击者让受害者访问第三方页面（或任一 lzj2012.top 子域上的注入点），
+      页面自动 POST /mc-api.php?action=approve_link，body: t=<攻击者的 12hex 链接令牌>；
+   c. 浏览器按 SameSite=Lax 规则：跨站 POST 不带 Cookie（现代浏览器已缓解）；
+      但同站子域请求（lzj2012.top 下其它站点）会带 Cookie，旧客户端/未实现 SameSite
+      的浏览器也会带 Cookie -> 请求以受害者身份被处理；
+   d. 备选向量：approve.php 无 frame-ancestors，可 iframe 套框诱导点击“在网页端批准”。
+
+   README.md 中有可直接复制的 HTML 表单与 curl 报文。
+
+结论: 服务端对 mc-api.php 的写操作没有任何来源校验，v2.1 的 CSRF 修复只覆盖 api.php，
+      属于修复范围不完整（文档给了错误的“CSRF 已修”安全感）。
+RESULT: NEEDS-REAL-ENV

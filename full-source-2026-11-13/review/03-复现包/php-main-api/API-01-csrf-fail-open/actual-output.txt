@@ -1,0 +1,39 @@
+# actual-output.txt —— API-01 CSRF 校验“Origin/Referer 两头缺失即放行”（fail-open）
+# 生成时间: 2026-11-08 13:11:13   耗时: 0.13s   退出码: 0
+# 命令: python.exe poc.py   （工作目录: API-01-csrf-fail-open）
+# 说明: 本输出由脚本真实执行产生；未联网、未访问生产环境。
+# ----------------------------------------------------------------------
+---- cloud/var/www/chat/api.php:7-17 ----
+   7| $action = isset($_GET['action']) ? (string)$_GET['action'] : '';
+   8| // X-CSRF-ORIGIN: 写操作只接受本站 Origin/Referer
+   9| if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
+  10|   $__o = (string)($_SERVER['HTTP_ORIGIN'] ?? '');
+  11|   $__r = (string)($_SERVER['HTTP_REFERER'] ?? '');
+  12|   $__src = $__o !== '' ? $__o : $__r;
+  13|   if ($__src !== '') {
+  14|     $__h = parse_url($__src, PHP_URL_HOST);
+  15|     if ($__h !== 'chat.lzj2012.top') fail('跨站请求被拒绝', 403);
+  16|   }
+  17| }
+-------------------
+
+头组合矩阵（method / Origin / Referer -> 判定）：
+  POST Origin='https://chat.lzj2012.top'             Referer='https://evil.example'         => ALLOW  host 命中白名单
+  POST Origin='https://evil.example'                 Referer='https://chat.lzj2012.top'     => REJECT host='evil.example' 不等于 chat.lzj2012.top
+  POST Origin=''                                     Referer=''                             => ALLOW  Origin 与 Referer 均为空 -> if ($__src !== '') 不成立 -> 放行   <<< FAIL-OPEN
+  POST Origin=''                                     Referer='https://evil.example'         => REJECT host='evil.example' 不等于 chat.lzj2012.top
+  POST Origin='null'                                 Referer=''                             => REJECT host=None 不等于 chat.lzj2012.top
+  POST Origin='https://chat.lzj2012.top.evil.example' Referer=''                             => REJECT host='chat.lzj2012.top.evil.example' 不等于 chat.lzj2012.top
+  POST Origin='https://chat.lzj2012.top@evil.example' Referer=''                             => REJECT host='evil.example' 不等于 chat.lzj2012.top
+  POST Origin='https://chat.lzj2012.top:8443'        Referer=''                             => ALLOW  host 命中白名单
+  GET  Origin=''                                     Referer=''                             => ALLOW  request method 不是 POST -> 整段 CSRF 检查被跳过
+
+结论：
+1) 该分支只在 Origin/Referer 至少一个存在时才做校验；两者都为空时直接跳过 -> 缺失即放行。
+2) 只要客户端不发这两个头（旧浏览器跨站表单 POST 不发送 Origin 的 IE11、部分代理/隐私插件、
+   非浏览器客户端），任意 POST 管理动作（admin_ban/admin_deluser/admin_setrole/send/upload）
+   都不需要 CSRF 即可被跨站构造。
+3) 现代浏览器另有 SameSite=Lax 兜底（跨站 POST 不携带 chq/chq_dev），因此定级 P2 而非 P1；
+   但这是代码里唯一的 CSRF 控制，且 v2.1 声称“已对 POST 校验”，修复语义应为 fail-closed。
+4) 第 9 行同时说明 GET 完全绕过该检查（详见 API-07）。
+RESULT: PASS

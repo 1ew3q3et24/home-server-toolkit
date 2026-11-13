@@ -1,0 +1,17 @@
+[APK-03] 退出登录不彻底：服务端设备令牌未吊销、WebView 会话 Cookie 未清理
+复现级别: R1（静态断言；不联网、不接触生产）
+环境: Windows + Python 3.12；无 Android SDK/模拟器，未安装 APK
+检查对象: apk/src/java/top/lzj2012/toolbox/ApprovalPanel.java, apk/src/java/top/lzj2012/toolbox/Api.java, apk/src/java/top/lzj2012/toolbox/Prefs.java, apk/src/java/top/lzj2012/toolbox/MainActivity.java, cloud/var/www/chat/app-api.php
+PASS | 服务端存在 app_logout（吊销当前设备令牌），客户端未调用  [app-api.php:87]
+PASS | 退出按钮只 stopService + Prefs.clear，没有任何服务端吊销调用  [ApprovalPanel.java:180-189]
+PASS | Api.java 无 app_logout 封装 → 客户端无法撤销服务端设备令牌  [Api.java 全文]
+PASS | Prefs.clear 只删本地密文，不触达服务端  [Prefs.java:69-71]
+PASS | Prefs.clear 位置确认  [Prefs.java:69]
+PASS | MainActivity 从不调用 removeAllCookies/removeSessionCookies → WebView 仍是登录态  [MainActivity.java:277-280（onPause 仅 flush）]
+PASS | 仅 flush 落盘（把会话 Cookie 写得更持久），未清理  [MainActivity.java:278]
+推演 | 退出后仍存活的凭据：
+     - trusted_devices.token_hash 记录（服务端，90 天有效，revoked_at 为空）
+     - WebView CookieJar 中的 chq（12 小时，服务端会话未吊销）
+     - 若令牌在退出前曾被导出/备份/root 读取，退出无法止损
+结论: 复现通过
+说明: “退出”只在本地删密文；服务端设备令牌与网页会话均继续有效，真机验证(R3)需登录后在网页端“设备管理”观察该设备是否仍列在有效列表。

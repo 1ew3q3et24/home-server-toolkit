@@ -1,0 +1,44 @@
+
+==============================================================================
+PY-08  审计来源 IP 可伪造 + 日志无轮转（R1，离线）
+==============================================================================
+
+[1] 被审代码（原样）：
+  91| def audit(msg):
+  92|     try:
+  93|         with open(AUDIT, "a") as f:
+  94|             f.write("%s ip=%s %s\n" % (datetime.now().astimezone().isoformat(timespec="seconds"), (request.headers.get("X-Real-IP") if request.remote_addr in ("127.0.0.1", "::1") else request.remote_addr) or request.remote_addr, msg))
+  95|     except Exception:
+  96|         pass
+
+[2] 请求带 X-Real-IP: 203.0.113.9（remote_addr=127.0.0.1）时写入：
+    2026-11-08T13:20:44+08:00 ip=203.0.113.9 mode_on
+
+[3] 只带 X-Forwarded-For、不带 X-Real-IP 时写入：
+    2026-11-08T13:20:44+08:00 ip=127.0.0.1 mode_off
+    -> 落成 127.0.0.1（本地回环），审计无法定位真实来源
+
+[4] 影响路径（R2）：
+    a) nginx 若写成 proxy_set_header X-Real-IP $http_x_real_ip（或漏配），
+       攻击者自带 X-Real-IP: <任意IP> 即可污染审计日志，事后追责失效；
+    b) nginx 配置未随包交付（见报告“覆盖与未覆盖”），无法核对，标‘待验证’。
+
+[5] 日志轮转检查：
+    追加 2000 条审计后: 99 -> 134099 字节（每条约 67 字节）
+    ddos-monitor.py 日志轮转相关调用: []
+    ddospanel.py     日志轮转相关调用: []
+    logview-health.py 对照（有轮转）: ['getsize(LOG']
+ 208|     try:
+ 209|         with open(LOG, "a") as f:
+ 210|             f.write(line + "\n")
+ 211|         if os.path.getsize(LOG) > 2000000:
+ 212|             os.replace(LOG, LOG + ".1")
+ 213|     except Exception:
+
+    另外 ddos-monitor.py:115-116 在“白名单命中”时每 30 秒写一行 ALLOWLIST，
+    没有轮转时约 2880 行/天（5KB/天量级、持续增长）。
+  [OK]   audit() 直接采信 X-Real-IP，可写入任意伪造 IP
+  [OK]   ddos-monitor/ddospanel 的日志无任何轮转/大小上限实现
+  [OK]   审计日志随操作线性无界增长
+
+RESULT: PASS  PY-08：审计 IP 可伪造（待 nginx 配置确认）+ 日志无轮转

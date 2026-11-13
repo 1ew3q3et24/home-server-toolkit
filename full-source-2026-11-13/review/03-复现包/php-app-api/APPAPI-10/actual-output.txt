@@ -1,0 +1,27 @@
+# 本文件由本机真实运行生成：
+# 命令: C:\Users\18012\.dsh\dsh-runtimes\dsh-primary-runtime\dependencies\python\python.exe work\repro\php-app-api\APPAPI-10\poc.py
+# 退出码: 0
+# ------------------------------------------------------------
+== 1) 源码核对：w_in() 是否接受 $_GET
+   w_in() 含 $_GET: True
+   w_in() 含 $_POST: True
+   w_token() 会回退到 w_in('token'): True
+
+== 2) 客户端当前怎么传（APK Api.java）
+   Api.java 使用 Authorization 头: True
+   Api.java 把 token 拼进 URL: False
+
+== 3) 令牌写法示例与落点
+   请求: GET /app-wait.php?mode=longpoll&last=&token=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+   nginx access log（默认 combined 格式）: 
+   203.0.113.9 - - [08/Nov/2026:12:00:00 +0800] "GET /app-wait.php?mode=longpoll&last=&token=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef HTTP/1.1" 200 1234 ...
+   -> 90 天有效期的设备令牌以明文长期保存在日志/日志轮转/备份/日志面板中；
+   -> 若该 URL 被当链接分享/页面引用，token 还会经 Referer 传给第三方。
+
+== 4) 该令牌能做什么（结合 app-api.php:33-44）
+   持有 64hex 设备令牌 = 该账号身份：app_me/app_devices/mc_approve/app_web_login 全部可用，
+   app_web_login 还能换出 12 小时网页会话。
+
+结论：服务端保留了「令牌可放 URL」的通道；当前 APK 虽用 Authorization 头，但
+      任何浏览器/EventSource/误操作链接都会把 90 天令牌写入可长期保存的日志。
+RESULT: PASS

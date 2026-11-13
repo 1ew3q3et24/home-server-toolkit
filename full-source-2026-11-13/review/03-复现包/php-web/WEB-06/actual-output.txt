@@ -1,0 +1,46 @@
+=== mcverify submit 的格式要求与匹配方式 (mcverify/index.php:203-213) ===
+ 203| case 'submit': {
+ 204| $u = require_login();
+ 205| $raw = strtoupper(vp('code'));
+ 206| $norm = preg_replace('/[^0-9]/', '', $raw);
+ 207| if (!preg_match('/^[0-9]{8}$/', $norm)) fail('格式不对：请照抄游戏里给你的 8 位数字，形如 1234-5678');
+ 208| $st = db()->prepare('SELECT id, mc_name, (expires_at < NOW()) AS expired, submitted_at FROM mc_codes WHERE REPLACE(code, "-", "") = ? ORDER BY id DESC LIMIT 1');
+ 209| $st->execute([$norm]);
+ 210| $row = $st->fetch();
+ 211| if (!$row) fail('验证失败：找不到这个验证码，请核对游戏里的 8 位数字');
+ 212| if ($row['submitted_at'] !== null) fail('验证失败：这个码已经用过了，请回游戏里重新获取');
+ 213| if ((int)$row['expired'] === 1) fail('验证失败：验证码已过期（有效期 5 分钟），请回游戏里重新获取');
+
+=== mc-api.php 唯一的生产生成路径：新行 code = 链接 URL (mc-api.php:62-68) ===
+  62| } else {
+  63| $token = bin2hex(random_bytes(6));
+  64| $link = 'https://chat.lzj2012.top/v/' . $token;
+  65| $code = $link; $ttl = mc_timeout();
+  66| $ins = $pdo->prepare('INSERT INTO mc_codes (mc_name, code, link_token, expires_at) VALUES (?, ?, ?, DATE_ADD(NOW(), INTERVAL ? SECOND))');
+  67| $ins->execute([$name, $code, $token, $ttl]);
+  68| }
+
+=== mc_new_code()（8 位数字码）只有定义，没有调用 ===
+  19| function mc_new_code(): string {
+  20| $a=''; $b='';
+  21| for ($i=0;$i<4;$i++) $a .= (string)random_int(0,9);
+  22| for ($i=0;$i<4;$i++) $b .= (string)random_int(0,9);
+  23| return $a . '-' . $b;
+  24| }
+  定义处 = 1, 调用处 = 0
+  全源码中 mc_new_code 出现次数 = 1（含定义 1 次）
+
+=== 等价验证：三种输入 vs 真实 code 列值 ===
+  [玩家按游戏提示粘贴链接] 输入='https://chat.lzj2012.top/v/ab12cd34ef56' -> $norm='2012123456', 格式校验=False
+        -> 直接 fail('格式不对：请照抄游戏里给你的 8 位数字')，根本到不了 SQL
+  [玩家手打 8 位码(旧格式)] 输入='1234-5678' -> $norm='12345678', 格式校验=True
+        -> SQL 命中行: 无（找不到这个验证码）
+
+=== 链接里的数字被“抠”出来后不可能等于 8 位码 ===
+  https://chat.lzj2012.top/v/ab12cd34ef56  -> norm='2012123456' 长度=10 格式合格=False
+  https://chat.lzj2012.top/v/001122334455  -> norm='2012001122334455' 长度=16 格式合格=False
+  https://chat.lzj2012.top/v/ffffffffffff  -> norm='2012' 长度=4 格式合格=False
+
+判定: 生产代码从不生成 8 位码（只生成 /v/<12hex> 链接），mcverify submit 仅认 8 位码；
+      除非库中存在历史 8 位码行，否则 mcverify 的绑定向导必然报“找不到验证码”。
+RESULT: 复现通过

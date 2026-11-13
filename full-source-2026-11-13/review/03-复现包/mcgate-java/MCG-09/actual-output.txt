@@ -1,0 +1,34 @@
+FINDING: MCG-09 验证码/链接并发提交导致双账号绑定同一 MC 名
+REPRO_LEVEL: R1
+
+== S1 无 UNIQUE(mc_name) 时, 两个登录账号同时提交同一个码 ==
+  t1 A(uid=1) SELECT 码行 -> (1, 'Steve') (submitted_at 仍为 NULL)
+  t2 B(uid=2) SELECT 码行 -> (1, 'Steve') (同样通过, 无锁)
+  t3 A SELECT 归属 -> None
+  t4 B SELECT 归属 -> None
+  t5 A INSERT mc_bindings (1, 'Steve') ok
+  t6 B INSERT mc_bindings (2, 'Steve') ok  <-- 第二个绑定行
+  t7 A UPDATE 码行 user_id=1 submitted_at=now
+  t8 B UPDATE 码行 user_id=2 submitted_at=now (覆盖 A, 无 submitted_at IS NULL 守卫)
+  绑定行: [(1, 'Steve'), (2, 'Steve')]
+  mc-api check 的归属查询(SELECT user_id ... LIMIT 1) => [1] (行序不确定)
+  同名的另一个账号在提交时会被 409 '该游戏名已绑定其他账号' 挡住? 不, 两条都已写入。
+  后果:
+   - 攻击者可以先抢占受害者 MC 名的绑定(拿到码的前提下), 受害者之后 409 无法绑定;
+   - 受害者账号被绑到 attack 账号名下时, tos_check/need_tos 分支跟随'归属行'变化,
+     可出现'受害者进服被冻结等别人同意 TOS'的锁死;
+   - 多台 MC 服/多次 check 的归属不稳定, 运维排查困难。
+
+== S2 若 mc_bindings 有 UNIQUE(mc_name)(待确认) ==
+  B 的 INSERT 抛 IntegrityError -> 第二个请求 500/409, 但码行仍被 A 消费;
+  IntegrityError: UNIQUE constraint failed: mc_bindings.mc_name
+  注意: 即使有 UNIQUE, B 仍执行了 UPDATE 覆盖 user_id(A 的码行被改成 B),
+        因为 UPDATE 没有 WHERE submitted_at IS NULL; 只是绑定行没重复。
+
+== 判定标准 ==
+  S1 出现两条同 mc_name 绑定行 + 归属查询不确定 => 竞态漏洞成立(R1);
+  '是否真有 UNIQUE 约束' 需运维提供建表 SQL 确认(待确认项 A2)。
+  修复后(见 fix.md): 事务 + SELECT ... FOR UPDATE + UPDATE 带 submitted_at IS NULL 守卫 +
+  UNIQUE(mc_name) + INSERT IGNORE, 应得到 '第二条请求 409/410 且不产生第二行'。
+
+RESULT: VULNERABLE

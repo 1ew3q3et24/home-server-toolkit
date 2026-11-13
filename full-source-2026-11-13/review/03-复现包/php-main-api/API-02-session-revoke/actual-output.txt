@@ -1,0 +1,51 @@
+# actual-output.txt —— API-02 会话吊销不完整：logout 不吊销签名 Cookie + sessions_valid_after 边界用 >
+# 生成时间: 2026-11-08 13:11:13   耗时: 0.12s   退出码: 0
+# 命令: python.exe poc.py   （工作目录: API-02-session-revoke）
+# 说明: 本输出由脚本真实执行产生；未联网、未访问生产环境。
+# ----------------------------------------------------------------------
+---- cloud/var/www/chat/api.php:206-210 ----
+ 206|   case 'logout': {
+ 207|     $__lu = current_user(); if ($__lu) { try { device_revoke_all((int)$__lu['id']); } catch (Throwable $e) {} }
+ 208|     setcookie(COOKIE_NAME, '', ['expires' => time() - 3600, 'path' => '/', 'secure' => true, 'httponly' => true, 'samesite' => 'Lax']);
+ 209|     jout(['ok' => true]);
+ 210|   }
+-------------------
+---- cloud/var/www/chat/api.php:166-173 ----
+ 166|     db()->prepare('UPDATE users SET pass_hash = ?, verified = 1, sessions_valid_after = UNIX_TIMESTAMP() WHERE email = ?')->execute([$hash, $email]);
+ 167|     $__uid = (int)db()->prepare('SELECT id FROM users WHERE email = ?')->execute([$email]) ? 0 : 0;
+ 168|     $__q = db()->prepare('SELECT id FROM users WHERE email = ?'); $__q->execute([$email]); $__uid = (int)$__q->fetchColumn();
+ 169|     if ($__uid > 0) {
+ 170|       db()->prepare('UPDATE trusted_devices SET revoked_at = NOW() WHERE user_id = ? AND revoked_at IS NULL')->execute([$__uid]);
+ 171|     }
+ 172|     chat_log('重置密码', $email . ' ip=' . client_ip());
+ 173|     jout(['ok' => true]);
+-------------------
+---- cloud/var/www/chat-lib/lib.php:174-181 ----
+ 174|       if (ctype_digit($uid) && ctype_digit($exp) && (int)$exp >= time()
+ 175|           && hash_equals(sign($uid . '|' . $exp), $sig)) {
+ 176|         $st = db()->prepare('SELECT id, nickname, email, verified, is_admin, role, tos_agreed_at, sessions_valid_after FROM users WHERE id = ?');
+ 177|         $st->execute([(int)$uid]);
+ 178|         $row = $st->fetch();
+ 179|         $u = $row ?: null;
+ 180|         if ($u && (int)($u['sessions_valid_after'] ?? 0) > ((int)$exp - SESSION_TTL)) $u = null;
+ 181|       }
+-------------------
+
+[场景 A] 用户登出（api.php:207 device_revoke_all + 清 Cookie），但不 bump sessions_valid_after
+  会话签发时刻 T0=T+27h45m00s，Cookie exp=T+39h45m00s，剩余可活 43100 秒
+  logout 之后 sessions_valid_after = NULL
+  登出后 T+27h46m41s 用同一 Cookie 请求 -> 会话仍有效 !!
+  登出后 T+28h46m40s 用同一 Cookie 请求 -> 会话仍有效 !!
+  登出后 T+39h44m59s 用同一 Cookie 请求 -> 会话仍有效 !!
+  说明：签名 Cookie 无服务端状态，logout 不写吊销时间 => 窃得 Cookie 者最长还能用 12 小时。
+
+[场景 B] reset/admin_ban 把 sessions_valid_after 设为吊销时刻 R（api.php:166/483）
+  R=T0+0（R 与会话签发同一秒（边界））：旧 Cookie -> 仍有效 <<< 边界漏吊销
+  R=T0-1（R 早于签发 1 秒（不该出现））：旧 Cookie -> 仍有效
+  R=T0+1（R 晚于签发 1 秒（常态））：旧 Cookie -> 已失效
+  说明：lib.php:180 应为 `sva >= issued`，否则吊销时刻与签发时刻落在同一秒的会话不会被吊销。
+
+结论：
+  * logout / tos_decline 都不 bump sessions_valid_after，无状态会话 Cookie 无法被服务端吊销（P2）。
+  * sessions_valid_after 比较使用 `>`，存在“同一秒”漏吊销窗口（P3，随 API-02 一并修）。
+RESULT: PASS

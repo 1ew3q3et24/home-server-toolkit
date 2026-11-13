@@ -1,0 +1,42 @@
+# actual-output.txt —— API-10 验证码经 exec 命令行参数传递；发信失败导致“码未入库”
+# 生成时间: 2026-11-08 13:11:15   耗时: 0.20s   退出码: 0
+# 命令: python.exe poc.py   （工作目录: API-10-code-argv-leak）
+# 说明: 本输出由脚本真实执行产生；未联网、未访问生产环境。
+# ----------------------------------------------------------------------
+1) send_mail() 的 exec 构造（lib.php:331-340）：
+   function send_mail(string $to, string $subject, string $body): bool {
+     $cmd = 'SEND_MAIL_BY=' . escapeshellarg('聊天室') . ' sudo -n ' . SEND_MAIL_BIN . ' '
+          . escapeshellarg($to) . ' ' . escapeshellarg($subject) . ' ' . escapeshellarg($body) . ' 2>&1';
+     $out = [];
+     $rc = 0;
+     exec($cmd, $out, $rc);
+     $txt = implode(' | ', array_slice($out, -3));
+     chat_log($rc === 0 ? '发信' : '发信失败', $to . ' rc=' . $rc . ' ' . $txt);
+     return $rc === 0;
+   }
+
+   验证码正文是否作为命令行参数传入： 是 <<< 本机任意用户 `ps aux` 可见
+   是否用 stdin/临时文件传递正文： 否
+
+2) issue_code() 的时序（lib.php:342-359）：
+   - SELECT TIMESTAMPDIFF(...) 冷却检查             读 codes 表
+   - ip_bump('sendcode', 10)                    IP 日限
+   - gen_code(6) 生成 6 位码                        熵 ≈ log2(10^6) ≈ 19.9 bit
+   - send_mail(...) 发送                          失败 -> throw，函数返回前不 INSERT
+   - INSERT INTO codes(...)                     只有发送成功才落库
+
+3) 失败时序模拟：
+   [send-mail.py 返回非 0（SMTP 拒绝）]
+      -> 邮件未发 -> 用户收不到码，也没有 codes 行 -> 冷却不生效，可立即重试（受 10/天/IP 限制）
+      -> 用户可见结果：无码可用
+   [send-mail.py 已投递但退出码非 0（部分警告/日志到 stderr 后 rc!=0）]
+      -> 邮件已到用户邮箱，但 codes 行未写 -> 用户输入正确验证码也必然失败
+      -> 用户可见结果：账号无法完成验证/重置
+   [send-mail.py 成功]
+      -> codes 行写入，正常
+      -> 用户可见结果：正常
+
+补充：6 位数字验证码 + 5 次尝试 + 10 封/天/IP 下，在线爆破概率 ~5e-5/天/IP；
+      真正的风险是①本机用户可窥探验证码；②发信失败时出现“邮件已到但码无效”的死锁体验。
+结论：P3（信息泄露/逻辑缺陷）。
+RESULT: PASS

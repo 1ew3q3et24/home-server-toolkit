@@ -1,0 +1,26 @@
+FINDING: MCG-01  fail-close 配置失效, 后端异常时闸门全放行
+REPRO_LEVEL: R1
+依据: Backend.java:31,65-71 ; Gate.java:74-87 ; config.yml:9
+
+场景                                             实际判定           符合预期?    性质
+------------------------------------------------------------------------------------------------
+S0 新玩家(未绑定), 后端正常                              FROZEN-CODE    是        符合
+S1 已绑定玩家, 后端正常                                 ADMIT(不冻结, 直接进服) 否        偏差
+S2 已绑定未同意TOS                                   FROZEN-TOS     是        符合
+S3 后端返回 403(secret 不符/密钥轮换)                    ADMIT(不冻结, 直接进服) 是        漏洞
+S4 后端返回 503(nginx ddos-mode 全站 503)            ADMIT(不冻结, 直接进服) 是        漏洞
+S5 连接超时/TLS 失败/证书过期                            ADMIT(不冻结, 直接进服) 是        漏洞
+S6 后端 200 但响应缺 verify 字段                       ADMIT(不冻结, 直接进服) 是        漏洞
+S7 config.yml 无 fail-open 键(代码默认 true)         ADMIT(不冻结, 直接进服) 是        漏洞
+
+关键结论:
+  * 异常路径 cr.needVerify = !failOpen() = True, 但 cr.code = None;
+    而 Gate.onJoin 的冻结条件是 (needVerify && code != null) -> 条件恒假。
+  * 即 config.yml:9 的 fail-open:false 所期望的'一律冻结'分支永远不可达(死代码)。
+  * 后端任何非 200/超时/密钥错误/响应缺字段 => 未验证玩家直接进服。
+  * 由 ddos-mode.sh:16,27 (location / { return 503; }) 可知 DDoS 模式期间 mc-api 必 503,
+    因此'被攻击时闸门自动全开', 攻击者不需要任何凭据。
+  * 漏洞场景 = 5 个, 其中不依赖运维误操作的 = S3/S4/S5 (后端正常运维事件即可触发)。
+
+RESULT: VULNERABLE
+{"vulnerable_scenarios": 5}

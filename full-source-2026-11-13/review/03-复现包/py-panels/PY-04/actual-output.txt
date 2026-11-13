@@ -1,0 +1,55 @@
+
+==============================================================================
+PY-04  无界日志读取 / DoS 放大面（R1，离线）
+==============================================================================
+
+[1] 合成日志: D:\Desktop\新建文件夹\work\repro\py-panels\_tmp\PY-04-25828-1\big-access.log
+    大小: 20.2 MB / 200000 行（真实 /var/log/nginx/access.log、/var/log/syslog 同级或更大）
+
+[2] 被审代码（原样）：
+ 103| def read_source(src, n=MAX_LINES):
+ 104|     typ = src.get("type", "file")
+ 105|     lines = []
+ 106|     if typ in ("file", "jsonl"):
+ 107|         try:
+ 108|             with open(src.get("path", ""), errors="replace") as f:
+ 109|                 lines = f.readlines()[-n * 3:]
+ 274|         with open(path, errors="replace") as f:
+ 275|             lines = f.readlines()[-5000:]
+ 159|         with open(path, errors="replace") as f:
+ 160|             lines = f.readlines()[-40000:]
+  59|         lines = [x.rstrip() for x in open(MLOG, errors='replace').readlines()[-400:]]
+
+[3] 直接调用原始 app.read_source()：
+    返回行数: 400（MAX_LINES=400）
+    tracemalloc 峰值: 29.4 MB（≈ 文件大小的 145%）
+    单次耗时: 0.473 秒
+
+[4] 修复建议的实现（seek 到尾部 512KB，只解析尾部）：
+    返回行数: 1200；tracemalloc 峰值: 1.72 MB；耗时: 0.005 秒
+    内存下降约 17 倍
+
+[5] 放大条件（静态/代码路径）：
+    app.py:357  页面 setTimeout 每 30 秒 location.reload()  —— 面板开着就持续触发
+ 355|             "".join(body) +
+ 356|             '<p style="max-width:1100px;margin:12px auto;color:#6e7681;font-size:12px">时间统一为北京时间 · 自动刷新 ' + str(refresh) + ' 秒</p>'
+ 357|             "<script>setTimeout(function(){location.reload()}, " + str(refresh * 1000) + ")</script>"
+    logview 全部 Python 文件中出现 MAX_CONTENT_LENGTH 的次数: 0
+    cat=all 时 collect() 会遍历所有 source（app.py:154-174），每源各读一遍全文
+    未认证请求也可触发 /login 的 pbkdf2(200000 轮) + time.sleep(1.5)，占线程（见 PY-05）
+
+[6] 生产入口（原样）：
+ 426| if __name__ == "__main__":
+ 427|     app.run(host="127.0.0.1", port=5001)
+    使用 Werkzeug 开发服务器（Flask 1.0+ app.run 默认 threaded=True），无超时/并发上限。
+
+[7] 攻击者如何把这个面放大（R2，静态可证）：
+    - 公网任意人请求站点的每个 URL 都会写进 /var/log/nginx/access.log（sources.json:78-82），
+      攻击者可以低成本把该文件撑到 GB 级；管理员面板每 30 秒自动刷新时就要把整份日志读进内存。
+    - /var/log/syslog、fail2ban.log 同理（sources.json:207、277）。
+  [OK]   read_source 峰值内存 ≈ 整份文件大小（全文件读入）
+  [OK]   修复实现峰值 <4MB（较整份读取低一个数量级，可作 fix.md 依据）
+  [OK]   全仓无 MAX_CONTENT_LENGTH（请求体无上限）
+  [OK]   生产入口是 Flask/Werkzeug 开发服务器，未做并发/超时加固
+
+RESULT: PASS  PY-04：整份日志读入内存 + 刷新放大 + 无请求体上限

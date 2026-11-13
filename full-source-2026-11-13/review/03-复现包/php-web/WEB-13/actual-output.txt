@@ -1,0 +1,28 @@
+=== chat/index.php:12 CSP 头 ===
+   header("Content-Security-Policy: default-src 'none'; img-src 'self' data: blob:; style-src 'unsafe-inline'; script-src 'nonce-" . $cspNonce . "'; connect-src 'self' wss://chat.lzj2012.top; base-uri 'none'; form-action 'self'; frame-ancestors 'none'");
+
+  script-src = "'nonce-"
+  含 'unsafe-inline' = False
+  含 nonce-         = True
+  -> 内联 <script> 因带 nonce 可执行；但 on*= 内联事件处理器不带 nonce，被 CSP 阻断
+
+=== 被静默阻断的内联事件处理器（chat/index.php:203） ===
+  line 203 上 on* 属性个数 = 2
+    onmouseover="this.style.transform='translateY(-1.5px)';this.style.boxShadow='0 6px 16px rg
+    onmouseout="this.style.transform='';this.style.boxShadow=''"
+  结果：'加密会话' 链接的 hover 动效永远不会生效（功能缺陷；不影响安全，反而说明 CSP 真在拦）
+
+=== mcverify/index.php 的全部 header() 调用 ===
+ 133| header('Content-Type: application/json; charset=utf-8');
+ 134| header('Cache-Control: no-store');
+  Content-Security-Policy  设置 = False
+  X-Content-Type-Options   设置 = False
+  Referrer-Policy          设置 = False
+  X-Frame-Options          设置 = False
+  Cache-Control            设置 = True
+
+  对比 chat/index.php 设置了：CSP(nonce) / Cache-Control no-store / Referrer-Policy no-referrer
+  mcverify 未设 CSP -> 一旦 WEB-08 的 innerHTML 注入成立，浏览器没有任何拦截层。
+
+判定: chat 的 CSP 自身有效（内联 handler 被拦，属功能缺陷）；mcverify 无任何安全头。
+RESULT: 复现通过

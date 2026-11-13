@@ -1,0 +1,25 @@
+# McGate 配置
+backend:
+  # 聊天室后端 (HTTPS)
+  base-url: "https://chat.lzj2012.top/mc-api.php"
+  # 与后端共享的密钥 (部署时写入, 不要提交到任何公开位置)
+  secret: "REDACTED"
+  timeout-ms: 8000
+  # 后端不通时是否放行 (true=放行, 保证能玩; false=一律冻结, 更安全)
+gate:
+  # 随机抽查概率 (0.0 ~ 1.0), 只对"已绑定"的玩家生效
+  random-check-rate: 0.15
+  # 冻结后多少秒未完成验证就踢出
+  timeout-seconds: 900
+  # 冻结时长按秒。验证码有效期由后端控制 (默认 300 秒)
+  # 是否在解锁后执行 whitelist add
+  whitelist-add: true
+  # 提示文案
+  message: "&c请打开认证链接：&e{code}"
+  title: "&c需要认证"
+  subtitle: "&f请打开下方链接完成认证"
+  kick-reason: "&c验证超时。请到 chat.lzj2012.top 完成验证后再进服。"
+  tos-message: "&c请打开 &fmcverify.lzj2012.top &c阅读并同意《用户协议》，同意后会自动解锁。"
+  tos-title: "&c请先同意用户协议"
+  tos-subtitle: "&f打开 mcverify.lzj2012.top"
+  tos-kick-reason: "&c未同意用户协议。请打开 mcverify.lzj2012.top 同意后再进服。"

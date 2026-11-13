@@ -1,0 +1,25 @@
+server {
+    listen 80;
+    server_name ddns.lzj2012.top 38.22.90.172;
+    access_log /var/log/nginx/ddns-test-access.log;
+    location / {
+        proxy_pass http://127.0.0.1:8091;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_read_timeout 15s;
+    }
+}
+server {
+    listen 443 ssl;
+    http2 on;
+    server_name ddns.lzj2012.top 38.22.90.172;
+    ssl_certificate /etc/letsencrypt/live/wildcard.lzj2012.top/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/wildcard.lzj2012.top/privkey.pem;
+    access_log /var/log/nginx/ddns-test-access.log;
+    location / {
+        proxy_pass http://127.0.0.1:8091;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_read_timeout 15s;
+    }
+}

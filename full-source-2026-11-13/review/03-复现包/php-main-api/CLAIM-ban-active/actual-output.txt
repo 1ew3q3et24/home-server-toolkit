@@ -1,0 +1,39 @@
+# actual-output.txt —— CLAIM-ban-active require_login 的 ban_active 检查（v2.1 声明）
+# 生成时间: 2026-11-08 13:11:17   耗时: 0.18s   退出码: 0
+# 命令: python.exe poc.py   （工作目录: CLAIM-ban-active）
+# 说明: 本输出由脚本真实执行产生；未联网、未访问生产环境。
+# ----------------------------------------------------------------------
+---- cloud/var/www/chat-lib/lib.php:227-232 ----
+ 227| function require_login(): array {
+ 228|   $u = current_user();
+ 229|   if (!$u) fail('请先登录', 401);
+ 230|   if (ban_active((int)$u['id']) === 'ban') fail('账号已被封禁', 403);
+ 231|   return $u;
+ 232| }
+-------------------
+
+  [是] 先判未登录 -> 401
+  [是] 再判封禁 -> 403（ban_active）
+  [是] 有 fail() 终止（不会继续执行）
+
+ban_active() 的实现（lib.php:409-418）：按 DB 的 NOW() 过滤 until，取 ban 优先 ->
+   function ban_active(int $uid): string { // 过期判定全部交给数据库 (PHP=UTC / MariaDB=+08, 用 PHP 比时间会差 8 小时) try { $st = db()->prepare('SELECT type FROM bans WHERE user_id = ? AND (until IS NULL OR until > NOW()) ORDER BY (type = "ban") DESC, id DESC LIMIT 1'); $st->execute([$uid]); $t = $st->fetchColumn(); return $t === false ? '' : (string)$t; } catch (Throwable $e) { return ''; } }
+
+require_login() 的调用点（这些入口都会在每次请求复查封禁，而不是只信 Cookie）：
+   cloud/var/www/chat/api.php                :50
+   cloud/var/www/chat/api.php                :56
+   cloud/var/www/chat/api.php                :213
+   cloud/var/www/chat/api.php                :237
+   cloud/var/www/chat/api.php                :250
+   cloud/var/www/chat/api.php                :314
+   cloud/var/www/chat/ai-bot.php             :25
+   cloud/var/www/chat/mc-api.php             :108
+   cloud/var/www/chat/mc-api.php             :146
+   cloud/var/www/chat/mc-api.php             :163
+
+补充（如实说明）：require_login 只拦 'ban'（封号），不拦 'block'（禁言）——
+  'block' 由 send/upload 分支各自用 ban_active() === 'block' 拦截（api.php:217-218,253-254），
+  poll/file 等只读接口允许禁言用户使用，符合“禁言=不能发言”的产品语义。
+
+v2.1 声明『require_login 增加 ban_active 检查；被封账号调用 mc-api 返回 403』：**符合**。
+RESULT: FIXED

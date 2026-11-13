@@ -1,0 +1,75 @@
+== 0. 源码事实（work/src 行号）==
+ddos-monitor.py:4: STATUS = "/var/www/logview/status.json"
+ddos-monitor.py:13: RECOVER = 10 * 60
+ddos-monitor.py:57: def set_security(level):
+ddos-monitor.py:61: r = cf("/zones/%s/settings/security_level" % zid, "PATCH", {"value": level})
+ddos-monitor.py:68: def mode_off():
+ddos-monitor.py:70: set_security("medium")
+ddos-monitor.py:97: def main():
+ddos-monitor.py:99: try:
+ddos-monitor.py:100: if os.path.getsize("/etc/nginx/ddos-mode.conf") > 0 and not os.path.exists(MODE):
+ddos-monitor.py:101: mode_off()
+ddos-monitor.py:102: log("RECONCILE stale conf cleared (no mode flag)")
+ddos-monitor.py:103: except Exception:
+ddos-monitor.py:104: pass
+ddos-monitor.py:105: try:
+ddos-monitor.py:106: s = json.load(open(STATUS)).get("system", {})
+ddos-monitor.py:107: except Exception:
+ddos-monitor.py:108: return
+ddos-monitor.py:114: allow_hit = bool(top and top["name"] in ALLOW and total_kbs > 0 and top["rate"] >= total_kbs * 0.6)
+ddos-monitor.py:117: high_raw = up >= CAP_UP * HIGH or down >= CAP_DOWN * HIGH
+ddos-monitor.py:118: high = high_raw and not allow_hit
+ddos-monitor.py:119: normal = (not high_raw) or allow_hit
+ddos-monitor.py:127: if high:
+ddos-monitor.py:129: if not is_mode:
+ddos-monitor.py:136: elif normal:
+ddos-monitor.py:137: if is_mode:
+ddos-monitor.py:141: elif now - int(st["normal_since"]) >= RECOVER:
+ddos-monitor.py:146: log("EXIT after 10m normal up=%.2f down=%.2f" % (up, down))
+ddos-monitor.py:151: json.dump(st, open(STATE, "w"))
+--- 面板对退出条件的文案 ---
+ddospanel.py:262: <p style="color:#6e7681;font-size:12px">Under Attack 会挑战所有访客。自动模式按带宽判断：上行/下行任一达到上限 80% 即进入防御；两者均回落到 50% 以下并持续 10 分钟，自动解除并恢复所有站点（ddos 控制台除外）。</p>
+
+== A. status.json 缺失/读失败 ==
+   ddos-monitor.py:105-108: `try: s=json.load(open(STATUS))... except: return`
+   -> main() 直接返回：不写 state、不进/退 503、不写任何日志。
+   -> 攻击流量打满时 503 也不会启用；运维从 ddos-monitor.log 里看不出任何异常。
+
+== B. status.json 陈旧（logview-health 定时器停了），最后值是高带宽 ==
+   第 x 轮 | 读到 up=7.5 down=2.0 | 模式 | 动作
+   1      | up=7.5 down=2.0 | True  | ENTER
+   2      | up=7.5 down=2.0 | True  | -
+   3      | up=7.5 down=2.0 | True  | -
+   29     | up=7.5 down=2.0 | True  | -
+   30     | up=7.5 down=2.0 | True  | -
+   -> 30 轮后仍在 503 模式: True（陈旧高值让 normal 永不成立）
+
+== C. state.json 非原子写 + 每轮被杀 -> normal_since 反复丢失 ==
+   模拟：每轮都在第151行写 state.json 时被杀，下一轮 st 被读成空 {}
+   第 1轮 now= 60s normal_since=60 mode=True 动作=NORMAL_START
+   第 2轮 now=120s normal_since=120 mode=True 动作=NORMAL_START
+   第 3轮 now=180s normal_since=180 mode=True 动作=NORMAL_START
+   第 4轮 now=240s normal_since=240 mode=True 动作=NORMAL_START
+   第 5轮 now=300s normal_since=300 mode=True 动作=NORMAL_START
+   第 6轮 now=360s normal_since=360 mode=True 动作=NORMAL_START
+   第 7轮 now=420s normal_since=420 mode=True 动作=NORMAL_START
+   第 8轮 now=480s normal_since=480 mode=True 动作=NORMAL_START
+   第 9轮 now=540s normal_since=540 mode=True 动作=NORMAL_START
+   第10轮 now=600s normal_since=600 mode=True 动作=NORMAL_START
+   第11轮 now=660s normal_since=660 mode=True 动作=NORMAL_START
+   第12轮 now=720s normal_since=720 mode=True 动作=NORMAL_START
+   -> 12 轮（12 分钟）仍未退出: True
+
+== D. 阈值语义：80% 进/80% 出，无迟滞 ==
+   采样序列（每分钟，Mbps）: 6.5 / 6.2×11 / 6.5 / 6.2×11 / ... 共 48 分钟
+   代码逻辑（80/80）切换次数 = 8，前几次: [(0, 'ENTER'), (11, 'EXIT'), (12, 'ENTER'), (23, 'EXIT'), (24, 'ENTER'), (35, 'EXIT')]
+   迟滞逻辑（80/50）切换次数 = 1
+   面板文案承诺的退出阈值是 50%%（ddospanel.py:262），与代码的 80%% 不一致。
+
+== E. 附带：mode_off 无条件把 CF security_level 改成 medium ==
+   ddos-monitor.py:68-70 mode_off() -> set_security('medium')：
+   会覆盖运维在面板里配置的 high/under_attack 等设置（配置被自动改写的副作用）。
+
+VERDICT: REPRODUCED
+
+[exit code] 0

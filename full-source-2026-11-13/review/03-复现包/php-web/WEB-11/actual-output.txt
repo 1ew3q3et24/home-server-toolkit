@@ -1,0 +1,34 @@
+=== 缓存与阻塞探活 (mcverify/index.php:65-77) ===
+  65| function mc_ping_status(): array {
+  66| $cache = '/tmp/mcverify-status.json';
+  67| if (is_file($cache) && (time() - (int)@filemtime($cache)) < 15) {
+  68| $j = json_decode((string)@file_get_contents($cache), true);
+  69| if (is_array($j)) return $j;
+  70| }
+  71| $host = 'mc.lzj2012.top'; $port = 25565;
+  72| $res = ['ok' => false, 'online' => null, 'max' => null, 'ts' => time()];
+  73| $fp = @stream_socket_client('tcp://' . $host . ':' . $port, $eno, $estr, 1.5);
+  74| if ($fp) {
+  75| stream_set_timeout($fp, 2);
+  76| $p = "\x00" . mc_varint(776) . mc_varint(strlen($host)) . $host . pack('n', $port) . "\x01";
+  77| @fwrite($fp, mc_varint(strlen($p)) . $p . "\x01\x00");
+
+=== 未认证即可调用，且被 TOS 闸门豁免 (mcverify/index.php:122,132-137) ===
+ 122| if ($action !== '' && !in_array($action, ['tos_accept','tos_agree','tos_decline','status'], true) && empty($_COOKIE['tos_ok'])) {
+ 132| case 'status': {
+ 133| header('Content-Type: application/json; charset=utf-8');
+ 135| echo json_encode(mc_ping_status(), JSON_UNESCAPED_UNICODE);
+
+=== 40 个并发请求在缓存过期瞬间同时到达 ===
+  实际 TCP 探活次数 = 40（理想应为 1，由缓存挡住）
+  每个探活阻塞 3.5s，40 个请求同时占用 40 个 PHP 工作进程
+  实测墙钟耗时 = 3.51s（模拟探活耗时，非真实网络）
+
+=== 其它相关弱点 ===
+  - 缓存文件路径固定：/tmp/mcverify-status.json（多用户 /tmp 可被同机低权用户预置/软链）
+  66| $cache = '/tmp/mcverify-status.json';
+ 111| @file_put_contents($cache, json_encode($res, JSON_UNESCAPED_UNICODE), LOCK_EX);
+  - 该端点无需登录、无速率限制、无 CSP/缓存头（只 no-store）
+
+判定: 缓存击穿导致 N 个并发请求触发 N 次 3.5s 阻塞探活 -> 可耗尽 php-fpm 工作进程（有限 DoS）。
+RESULT: 复现通过

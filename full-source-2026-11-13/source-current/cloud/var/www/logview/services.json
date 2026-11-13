@@ -1,0 +1,131 @@
+[
+ {
+  "name": "Minecraft 服务",
+  "kind": "service",
+  "unit": "mc.service",
+  "port": 25565,
+  "note": "由切服脚本决定是否在本机运行"
+ },
+ {
+  "name": "nginx",
+  "kind": "service",
+  "unit": "nginx.service",
+  "port": 443
+ },
+ {
+  "name": "MariaDB",
+  "kind": "service",
+  "unit": "mariadb.service",
+  "port": 3306
+ },
+ {
+  "name": "PHP-FPM",
+  "kind": "service",
+  "unit": "php8.2-fpm.service"
+ },
+ {
+  "name": "Panel",
+  "kind": "service",
+  "unit": "panel.service",
+  "port": 5000
+ },
+ {
+  "name": "日志查看",
+  "kind": "service",
+  "unit": "logview.service",
+  "port": 5001
+ },
+ {
+  "name": "One API",
+  "kind": "service",
+  "unit": "one-api.service",
+  "port": 3002
+ },
+ {
+  "name": "Mercure",
+  "kind": "service",
+  "unit": "mercure.service",
+  "port": 3000
+ },
+ {
+  "name": "Centrifugo",
+  "kind": "service",
+  "unit": "centrifugo.service",
+  "port": 3001
+ },
+ {
+  "name": "浏览器 Kiosk",
+  "kind": "service",
+  "unit": "browser-kiosk.service",
+  "port": 3010
+ },
+ {
+  "name": "心跳接收",
+  "kind": "service",
+  "unit": "heartbeat.service",
+  "port": 8787
+ },
+ {
+  "name": "MC AI 桥",
+  "kind": "service",
+  "unit": "mc-ai-bridge.service"
+ },
+ {
+  "name": "Fail2ban",
+  "kind": "service",
+  "unit": "fail2ban.service"
+ },
+ {
+  "name": "OpenCanary",
+  "kind": "service",
+  "unit": "opencanary.service",
+  "port": 2223
+ },
+ {
+  "name": "Endlessh",
+  "kind": "service",
+  "unit": "endlessh.service",
+  "port": 2224
+ },
+ {
+  "name": "RustDesk hbbs",
+  "kind": "docker",
+  "container": "hbbs"
+ },
+ {
+  "name": "RustDesk hbbr",
+  "kind": "docker",
+  "container": "hbbr"
+ },
+ {
+  "name": "切服定时器",
+  "kind": "timer",
+  "unit": "failover.timer"
+ },
+ {
+  "name": "浏览器守卫",
+  "kind": "timer",
+  "unit": "browser-guard.timer"
+ },
+ {
+  "name": "配置备份定时器",
+  "kind": "timer",
+  "unit": "cloud-backup.timer"
+ },
+ {
+  "name": "日志推送定时器",
+  "kind": "timer",
+  "unit": "openclaw-logs-hub-sync.timer"
+ },
+ {
+  "name": "证书续期定时器",
+  "kind": "timer",
+  "unit": "certbot.timer"
+ },
+ {
+  "name": "DDNS 更新",
+  "kind": "service",
+  "unit": "ddns-update.service",
+  "port": 8091
+ }
+]

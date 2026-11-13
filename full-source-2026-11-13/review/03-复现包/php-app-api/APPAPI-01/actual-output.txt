@@ -1,0 +1,21 @@
+# 本文件由本机真实运行生成：
+# 命令: C:\Users\18012\.dsh\dsh-runtimes\dsh-primary-runtime\dependencies\python\python.exe work\repro\php-app-api\APPAPI-01\poc.py
+# 退出码: 0
+# ------------------------------------------------------------
+== 1) check() 的输入里根本没有 banned/封禁状态
+   mc-api.php:46 的 SELECT 只取 b.user_id 与 u.tos_agreed_at，全文不碰 bans 表；
+   因此 banned=True/False 时 check() 必须返回完全相同的结果（下面实测）：
+   banned=False -> check()={'ok': True, 'verify': False}
+                  -> 插件 Gate: JOIN_ALLOWED
+   banned=True  -> check()={'ok': True, 'verify': False}
+                  -> 插件 Gate: JOIN_ALLOWED
+
+== 2) 15% 抽样分支会临时冻结，但那与封禁无关（随机抽样而非封禁）
+   draw=0.50 -> verify=False need_tos=False -> 插件 Gate: JOIN_ALLOWED
+   draw=0.05 -> verify=True need_tos=False -> 插件 Gate: FREEZE_VERIFY
+
+== 3) 源码核对: mc-api.php 的 check 分支长度 2043 字节；含 ban_active()=False；含 bans 表=False；含 'ban'=False
+
+结论: 封禁状态完全不参与 MC 准入判定。一个已绑定且已同意 TOS 的封禁账号，
+      在 85% 的进服请求中直接 JOIN_ALLOWED（进服成功），封禁对其无效。
+RESULT: PASS

@@ -1,0 +1,19 @@
+[APK-04] 通知“允许”动作是广播 PendingIntent：通知监听应用可无感自动审批（绕过用户二次确认）
+复现级别: R2（静态可证）；运行时复现需真机 + 通知监听应用（见 README，本机未执行）
+环境: Windows + Python 3.12；无 Android SDK/模拟器，未安装 APK
+检查对象: apk/src/java/top/lzj2012/toolbox/Notifier.java, apk/src/java/top/lzj2012/toolbox/ActionReceiver.java, apk/src/AndroidManifest.xml
+PASS | 允许/拒绝动作是 Broadcast PendingIntent（不是需要用户点击界面的 getActivity）  [Notifier.java:64,71]
+PASS | 广播 action 是可预测的字符串常量  [Notifier.java:61]
+PASS | 已使用 FLAG_IMMUTABLE（只能防填充/篡改，不防 send()）  [Notifier.java:41,58,65,72]
+PASS | 通知按钮绑定该 PendingIntent  [Notifier.java:88]
+PASS | ActionReceiver 收到广播后直接执行审批（无二次确认、无界面）  [ActionReceiver.java:24]
+PASS | 接收方不校验调用来源（exported=false 也挡不住 PendingIntent 持有者 send()）  [ActionReceiver.java:10-31]
+PASS | ActionReceiver 虽 exported=false，但通知监听应用通过 PendingIntent 触发不受此限制  [AndroidManifest.xml:56]
+攻击路径（R2 静态证明，运行时需真机 R3）：
+  1. 受害机安装并授予“通知使用权”的任意应用（助手/清理/自动化类）
+  2. 该应用在 NotificationListenerService.onNotificationPosted 中取
+     sbn.getNotification().actions[i].actionIntent → PendingIntent
+  3. 直接调用 actionIntent.send() → 系统投递 ALLOW 广播给 ActionReceiver
+  4. ActionReceiver 用本地设备令牌调用 mc_approve → 进服请求被批准，用户零感知
+结论: 复现通过
+说明: FLAG_IMMUTABLE 修复的是“恶意填充 extras”，不是“未经用户手势调用”。

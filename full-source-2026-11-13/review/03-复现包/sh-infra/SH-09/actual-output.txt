@@ -1,0 +1,59 @@
+== 0. 源码事实（work/src 行号）==
+ddos-monitor.py:16:     ALLOW = set(json.load(open("/etc/ddos-allowlist.json")).get("allow", []))
+ddos-monitor.py:17: except Exception:
+ddos-monitor.py:18:     ALLOW = set()
+ddos-monitor.py:73: def top_procs():
+ddos-monitor.py:74:     try:
+ddos-monitor.py:75:         p = subprocess.run(["nethogs", "-t", "-c", "1", "-d", "1"], capture_output=True, text=True, timeout=6)
+ddos-monitor.py:80:     for ln in out.splitlines():
+ddos-monitor.py:81:         if "\t" not in ln:
+ddos-monitor.py:82:             continue
+ddos-monitor.py:83:         left, rest = ln.split("\t", 1)
+ddos-monitor.py:84:         parts = rest.split("\t")
+ddos-monitor.py:85:         if len(parts) < 2:
+ddos-monitor.py:86:             continue
+ddos-monitor.py:87:         name = left.split("/")[0].strip()
+ddos-monitor.py:88:         if name.startswith("unknown"):
+ddos-monitor.py:89:             name = "unknown"
+ddos-monitor.py:94:         procs[name] = procs.get(name, 0.0) + sent + recv
+ddos-monitor.py:95:     return sorted([{"name": k, "rate": v} for k, v in procs.items()], key=lambda x: x["rate"], reverse=True)
+ddos-monitor.py:114:     allow_hit = bool(top and top["name"] in ALLOW and total_kbs > 0 and top["rate"] >= total_kbs * 0.6)
+ddos-monitor.py:115:     if allow_hit:
+ddos-monitor.py:117:     high_raw = up >= CAP_UP * HIGH or down >= CAP_DOWN * HIGH
+ddos-monitor.py:118:     high = high_raw and not allow_hit
+--- ddos-allowlist.json ---
+   {"allow": ["hbbs", "hbbr", "rustdesk", "java", "paper", "minecraft", "sshd", "systemd", "fail2ban-server", "x11vnc", "msedge"]}
+
+== 1. 解析方向：nethogs 的 program 字段是绝对路径时 ==
+   输入 '/usr/lib/jvm/java-17-openjdk-amd64/bin/java/2637/0' -> name=''         allow命中=False
+   输入 '/usr/bin/sshd/901/0'                                -> name=''         allow命中=False
+   输入 '/usr/lib/systemd/systemd/1/0'                       -> name=''         allow命中=False
+   输入 'java/2637/0'                                        -> name='java'     allow命中=True
+   输入 'unknown TCP/0/0'                                    -> name='unknown'  allow命中=False
+   输入 '/usr/bin/wget/4321/0'                               -> name=''         allow命中=False
+
+   [判定] 绝对路径样本解析出的名字: ['']
+   白名单对“绝对路径程序”永远不命中: 是
+
+== 2. 判定方向：allow_hit 会让 503 永不开启，即使带宽打满 ==
+   条件（ddos-monitor.py:114）：top.name in ALLOW and rate >= total_kbs*0.6
+   top.name     rate(KB/s) total      allow_hit  high(80%) 
+   'java'       900.0      1000.0     True       False     
+   'sshd'       900.0      1000.0     True       False     
+   'systemd'    900.0      1000.0     True       False     
+   ''           900.0      1000.0     False      True      
+   'unknown'    900.0      1000.0     False      True      
+   'wget'       900.0      1000.0     False      True      
+
+   => 本地任意进程只要名字叫 java/sshd/systemd，且是最大流量来源，
+      就把 high 变成 False：攻击流量（含来自该进程的外发）完全不触发 503。
+      而正常 MC 若以绝对路径出现在 nethogs 里，名字被解析成 ''，反而触发 503。
+
+== 3. 通用名清单（任何本地用户都可能撞名）==
+   fail2ban-server hbbr hbbs java minecraft msedge paper rustdesk sshd systemd x11vnc
+   其中 rustdesk/x11vnc/msedge 是桌面类进程，说明这台机器可能同时跑非服务进程，
+   “按名字豁免”在多人/多进程环境里尤其危险。
+
+VERDICT: REPRODUCED
+
+[exit code] 0

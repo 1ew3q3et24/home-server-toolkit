@@ -1,0 +1,23 @@
+[APK-08] 自定义 scheme 深链无来源/鉴权校验：任意应用或网页可拉起“批准”页
+复现级别: R2（静态可证）；运行时需真机（R3），本机未执行
+环境: Windows + Python 3.12 + xml.etree；无 Android SDK/模拟器
+检查对象: apk/src/AndroidManifest.xml, apk/src/java/top/lzj2012/toolbox/MainActivity.java
+PASS | MainActivity 显式 exported=true（launcher + 深链）  [AndroidManifest.xml:25-27]
+PASS | 深链 host = approve/chat，且带 BROWSABLE（浏览器可直达）  [AndroidManifest.xml:35-46]
+PASS | 自定义 scheme 无 autoVerify（Android 无法验证 scheme 归属，任何应用都能注册同一 scheme）
+PASS | MainActivity 无 android:permission（也无签名级门槛）
+PASS | handleIntent 位置确认  [MainActivity.java:259-270]
+PASS | 只按 scheme+host 分派，不校验 action/调用方  [MainActivity.java:262-268]
+PASS | handleIntent 中没有 getCallingPackage()  [MainActivity.java:259-270]
+PASS | handleIntent 中没有 getLaunchedFromPackage()  [MainActivity.java:259-270]
+PASS | handleIntent 中没有 getReferrer()  [MainActivity.java:259-270]
+PASS | handleIntent 中没有 checkPermission()  [MainActivity.java:259-270]
+PASS | handleIntent 中没有 登录态校验  [MainActivity.java:259-270]
+PASS | 深链直接触发 approval.reload()（读本地令牌并拉取待批准列表）  [MainActivity.java:265]
+外部触发命令（R3，需真机；本机无 adb/模拟器，未执行）：
+  adb shell am start -a android.intent.action.VIEW -d "lzjapp://approve"
+  adb shell am start -a android.intent.action.VIEW -d "lzjapp://chat"
+  # 任意第三方 APP 内: startActivity(new Intent(ACTION_VIEW, Uri.parse("lzjapp://approve")))
+说明：Android 10+ 后台应用不能直接后台弹 Activity，但浏览器/前台应用/用户点击的链接可直达；
+      影响为 UI 混淆与社工（把用户引到批准页），当前代码本身不能被外部直接批准（仍需用户点按钮）。
+结论: 复现通过

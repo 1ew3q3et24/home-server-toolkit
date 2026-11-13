@@ -1,0 +1,46 @@
+== 0. 源码事实（work/src 行号）==
+cf-set-a.sh:4: set -uo pipefail
+cf-set-a.sh:5: H="$1"; WANT="$2"
+cf-set-a.sh:6: [ -n "$H" ] && [ -n "$WANT" ] || { echo "usage: cf-set-a.sh <host|@> <ip>"; exit 2; }
+cf-set-a.sh:7: ZONE=lzj2012.top
+cf-set-a.sh:9: CFG=$(mktemp); chmod 600 "$CFG"
+cf-set-a.sh:10: { printf 'header = "Authorization: Bearer '; cat /root/.config/cloudflare/token; printf '"\n'; } > "$CFG"
+cf-set-a.sh:11: trap 'rm -f "$CFG"' EXIT
+cf-set-a.sh:12: CURL=(curl -sS --max-time 20 --config "$CFG")
+cf-set-a.sh:14: ZID=$("${CURL[@]}" "$API/zones?name=$ZONE" | jq -r '.result[0].id // empty')
+cf-set-a.sh:16: REC=$("${CURL[@]}" "$API/zones/$ZID/dns_records?type=A&name=$NAME")
+cf-set-a.sh:17: RID=$(printf '%s' "$REC" | jq -r '.result[0].id // empty')
+cf-set-a.sh:20: [ "$CUR" = "$WANT" ] && { echo "NOCHANGE $NAME $CUR"; exit 0; }
+cf-set-a.sh:21: BODY=$(jq -nc --arg n "$NAME" --arg v "$WANT" '{type:"A",name:$n,content:$v,ttl:1,proxied:false}')
+cf-set-a.sh:22: OUT=$("${CURL[@]}" -X PUT -H 'Content-Type: application/json' -d "$BODY" "$API/zones/$ZID/dns_records/$RID")
+cf-set-a.sh:23: if printf '%s' "$OUT" | jq -e '.success==true' >/dev/null 2>&1; then echo "OK $NAME -> $WANT"; exit 0; fi
+cf-set-a.sh:24: echo "FAIL $NAME $(printf '%s' "$OUT" | jq -c '.errors')"; exit 1
+
+== 1. 缺参数时 usage 分支不可达（静态/R2）==
+   第5行在 set -u（第4行）之后直接 `H="$1"`, `WANT="$2"`：
+   少传参数时 bash 报 '<arg>: unbound variable' 并以非零退出，
+   第6行的 `[ -n "$H" ] && [ -n "$WANT" ] || { usage; exit 2; }` 永远执行不到。
+   cf-set-a.sh:5 = 'H="$1"; WANT="$2"'；cf-set-a.sh:6 = '[ -n "$H" ] && [ -n "$WANT" ] || { echo "usage: cf-set-a.sh '
+   => usage 分支不可达: 是（结论需在装有 bash 的测试机复核）
+
+== 2. token 文件尾随换行 -> curl 配置解析失败（本机真实执行 curl）==
+   curl 版本: curl 8.21.0 (Windows) libcurl/8.21.0 Schannel zlib/1.3.2 WinIDN WinLDAP
+   配置内容(带换行): b'header = "Authorization: Bearer SECRET_TOKEN_ABC\n"\n'
+   配置内容(无换行): b'header = "Authorization: Bearer SECRET_TOKEN_ABC"\n'
+   curl -K <带换行配置> 退出码 = 2
+   curl -K <无换行配置> 退出码 = 7
+   带换行时的 curl 输出: 'curl: D:\\Desktop\\新建文件夹\\work\\repro\\sh-infra\\SH-16\\.tmp_sh16\\cfg_nl:2 \ncurl: config file option \'"\' is unknown\ncurl: option -K: found an unknown config option\ncur'
+   => 尾随换行导致配置解析失败: 是（缺陷成立）
+
+   影响：failover.sh 的 set_record 全部失败（cf-set-a.sh exit 1）；
+   叠加 SH-05（失败仍推进 last_reported）=> DNS 永久不更新，且不再重试。
+
+== 3. 其它健壮性（静态核对）==
+   WANT 无 IP 格式校验                     成立
+   无 --retry/--retry-delay            成立
+   只更新单条 A 记录(result[0])              成立
+   失败信息含 CF 错误体                       成立
+
+VERDICT: REPRODUCED
+
+[exit code] 0

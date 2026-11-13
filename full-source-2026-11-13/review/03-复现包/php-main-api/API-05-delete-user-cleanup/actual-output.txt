@@ -1,0 +1,64 @@
+# actual-output.txt —— API-05 删除用户清理不完整（api.php 漏表；AI 审批路径几乎全漏）
+# 生成时间: 2026-11-08 13:11:14   耗时: 0.36s   退出码: 0
+# 命令: python.exe poc.py   （工作目录: API-05-delete-user-cleanup）
+# 说明: 本输出由脚本真实执行产生；未联网、未访问生产环境。
+# ----------------------------------------------------------------------
+全站 PHP 涉及的表（扫描所得）：
+  bans, codes, invite_codes, ip_actions, keywords, login_fails, mc_bindings, mc_codes, messages, mod_log, qr_logins, settings, trusted_devices, uploads, user_perms, users
+
+---- cloud/var/www/chat/api.php:358-382 ----
+ 358|   case 'admin_deluser': {
+ 359|     $me = admin_user();
+ 360|     $id = (int)post('id');
+ 361|     $t = db()->prepare('SELECT id, nickname, role FROM users WHERE id = ?');
+ 362|     $t->execute([$id]);
+ 363|     $tg = $t->fetch();
+ 364|     if (!$tg) fail('用户不存在');
+ 365|     ensure_can_act_on($me, $tg);
+ 366|     // 清理关联数据与磁盘文件（V-03）
+ 367|     $up = db()->prepare('SELECT id, ext FROM uploads WHERE user_id = ?');
+ 368|     $up->execute([$id]);
+ 369|     foreach ($up->fetchAll() as $f) {
+ 370|       @unlink(UPLOAD_DIR . '/' . (int)$f['id'] . '.' . $f['ext']);
+ 371|     }
+ 372|     db()->prepare('DELETE FROM uploads WHERE user_id = ?')->execute([$id]);
+ 373|     db()->prepare('DELETE FROM messages WHERE user_id = ?')->execute([$id]);
+ 374|     db()->prepare('DELETE FROM bans WHERE user_id = ?')->execute([$id]);
+ 375|     db()->prepare('DELETE FROM trusted_devices WHERE user_id = ?')->execute([$id]);
+ 376|     db()->prepare('DELETE FROM mc_bindings WHERE user_id = ?')->execute([$id]);
+ 377|     db()->prepare('DELETE FROM mc_codes WHERE user_id = ?')->execute([$id]);
+ 378|     db()->prepare('DELETE FROM user_perms WHERE user_id = ?')->execute([$id]);
+ 379|     db()->prepare('DELETE FROM users WHERE id = ?')->execute([$id]);
+ 380|     log_mod((int)$me['id'], $id, 'deluser', $tg['nickname']);
+ 381|     jout(['ok' => true]);
+ 382|   }
+-------------------
+---- cloud/var/www/chat/ai-bot-action.php:100-114 ----
+ 100| if ($action === 'delete_user') {
+ 101|     $id = (int)($p['user_id'] ?? 0);
+ 102|     if ($id <= 0) aa_out(['ok' => false, 'error' => '用户 ID 无效'], 400);
+ 103|     $st = db()->prepare('SELECT id, nickname, role FROM users WHERE id = ?');
+ 104|     $st->execute([$id]);
+ 105|     $tg = $st->fetch();
+ 106|     if (!$tg) aa_out(['ok' => false, 'error' => '用户不存在'], 404);
+ 107|     ensure_can_act_on($me, $tg);
+ 108|     db()->prepare('DELETE FROM messages WHERE user_id = ?')->execute([$id]);
+ 109|     db()->prepare('DELETE FROM bans WHERE user_id = ?')->execute([$id]);
+ 110|     db()->prepare('DELETE FROM users WHERE id = ?')->execute([$id]);
+ 111|     log_mod($uid, $id, 'ai_deluser', $tg['nickname']);
+ 112|     ai_log('uid=' . $uid . ' action=delete_user target=' . $id);
+ 113|     aa_out(['ok' => true, 'action' => 'delete_user']);
+ 114| }
+-------------------
+
+admin_deluser 清理的表： bans, mc_bindings, mc_codes, messages, trusted_devices, uploads, user_perms, users
+ai delete_user 清理的表： bans, messages, users
+
+admin_deluser 未清理的用户相关表： codes, invite_codes, login_fails, mod_log, qr_logins
+ai delete_user 未清理的用户相关表： codes, invite_codes, login_fails, mc_bindings, mc_codes, mod_log, qr_logins, trusted_devices, uploads, user_perms
+ai delete_user 是否 unlink 上传文件： 否 <<< 磁盘文件永久残留
+
+v2.1 声称：“删除用户：清理 uploads 文件/表、trusted_devices、mc_bindings、mc_codes、user_perms”
+  -> api.php 路径确实做了列出的 5 项（符合），但仍遗漏 5 张表；
+  -> AI 审批 delete_user 是第二套实现，上述 5 项一项都没做（修不全，文档声言不符）。
+RESULT: PASS

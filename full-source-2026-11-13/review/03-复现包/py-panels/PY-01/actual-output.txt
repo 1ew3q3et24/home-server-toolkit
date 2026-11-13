@@ -1,0 +1,54 @@
+
+==============================================================================
+PY-01  nethogs 进程名解析 -> 白名单失效（R1，离线）
+==============================================================================
+
+[1] 生产白名单 ALLOW = ['fail2ban-server', 'hbbr', 'hbbs', 'java', 'minecraft', 'msedge', 'paper', 'rustdesk', 'sshd', 'systemd', 'x11vnc']
+
+[2] 被审解析代码（原样）：
+  80|     for ln in out.splitlines():
+  81|         if "\t" not in ln:
+  82|             continue
+  83|         left, rest = ln.split("\t", 1)
+  84|         parts = rest.split("\t")
+  85|         if len(parts) < 2:
+  86|             continue
+  87|         name = left.split("/")[0].strip()
+  88|         if name.startswith("unknown"):
+  89|             name = "unknown"
+  90|         try:
+  91|             sent = float(parts[0]); recv = float(parts[1])
+  92|         except Exception:
+  93|             continue
+  94|         procs[name] = procs.get(name, 0.0) + sent + recv
+  95|     return sorted([{"name": k, "rate": v} for k, v in procs.items()], key=lambda x: x["rate"], reverse=True)
+
+[3] 用 nethogs 真实格式（argv[0]=绝对路径）喂 top_procs()：
+  #    解析出的进程名(repr)                  rate(KB/s)       占比  在 ALLOW 中?
+  1    ''                                 1149.7    98.2%  False
+  2    'nginx: worker process'              12.0     1.0%  False
+  3    'unknown'                             9.0     0.8%  False
+
+    解析结果包含空串进程名: True；单独名为 'java' 的条目: 无
+
+[4] 场景 A（systemd/docker 启动，argv[0] 为绝对路径）：
+    带宽 = 上行 7.0 Mbps / 下行 2.0 Mbps（高于上行阈值 8*0.8=6.4）
+    ddos-mode.sh 调用: [('ddos-mode.sh', 'on')]
+    set_security 调用: ['under_attack']
+    /run/ddos-mode 是否被创建: True
+    ddos-monitor.log:
+      2026-11-08T13:20:29 ENTER up=7.00 down=2.00
+    'java' 在白名单中: True；本次是否命中白名单(ALLOWLIST 日志): False
+
+[5] 场景 B（进程以裸名启动，argv[0]='java'，同一批流量）：
+    ddos-mode.sh 调用: []
+    /run/ddos-mode 是否被创建: False
+    ddos-monitor.log:
+      2026-11-08T13:20:29 ALLOWLIST top=java rate=1133.0KB/s total=1125.0KB/s
+
+  [OK]   解析后出现空串进程名，'java' 被合并进空串（split('/')[0] 取到路径首段）
+  [OK]   场景 A：白名单含 java 但未命中 -> 合法 MC 流量照样进入 DDoS 模式（全站 503）
+  [OK]   场景 B：裸名启动时命中白名单 -> 约 100% 流量来自 java 仍不触发防御（攻击者可利用）
+  [OK]   证据行号核对：ddos-monitor.py:87 为 name = left.split('/')[0].strip()
+
+RESULT: PASS  PY-01：白名单在两种启动方式下分别失效/被绕过

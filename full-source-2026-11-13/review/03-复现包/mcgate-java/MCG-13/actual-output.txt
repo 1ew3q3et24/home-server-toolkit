@@ -1,0 +1,59 @@
+FINDING: MCG-13 AI 审批令牌 jti 一次性实现核对(声明=符合, 但有缺陷)
+REPRO_LEVEL: R2
+
+== 声明: 'AI: 审批令牌增加 jti 并一次性使用, 实测第二次被拒' ==
+== 核对的实现 ==
+  ai-common.php:96   function ai_sign_action(array $cfg, int $uid, string $action, array $params): string {
+  ai-common.php:97   $payload = json_encode(['uid' => $uid, 'action' => $action, 'params' => $params, 'exp' => time() + 120, 'jti' => bin2hex(random_bytes(12))], JSON_UNESCAPED_UNICODE);
+  ai-common.php:98   $b = ai_b64u((string)$payload);
+  ai-common.php:99   $sig = hash_hmac('sha256', $b, (string)$cfg['action_secret']);
+  ai-common.php:100  return $b . '.' . $sig;
+  ...
+  ai-common.php:103  function ai_verify_action(array $cfg, string $token): ?array {
+  ai-common.php:104  $parts = explode('.', $token);
+  ai-common.php:105  if (count($parts) !== 2) return null;
+  ai-common.php:106  [$b, $sig] = $parts;
+  ai-common.php:107  $exp = hash_hmac('sha256', $b, (string)$cfg['action_secret']);
+  ai-common.php:108  if (!hash_equals($exp, $sig)) return null;
+  ai-common.php:113  if (!is_array($d) || (int)($d['exp'] ?? 0) < time()) return null;
+  ai-common.php:114  $jti = (string)($d['jti'] ?? '');
+  ai-common.php:115  if ($jti === '' || !preg_match('/^[0-9a-f]{24}$/', $jti)) return null;
+  ai-common.php:116  $dir = '/var/lib/chat-ai/used';
+  ai-common.php:117  if (!is_dir($dir)) @mkdir($dir, 0750, true);
+  ai-common.php:118  $fp = @fopen($dir . '/' . hash('sha256', $jti), 'x');
+  ai-common.php:119  if (!$fp) return null;
+  ai-common.php:120  fclose($fp);
+
+  ai-bot-action.php:15   $me = require_role(ROLE_OWNER);
+  ai-bot-action.php:22   $d = ai_verify_action($cfg, $token);
+  ai-bot-action.php:23   if ($d === null) aa_out(['ok' => false, 'error' => '批准已过期或无效，请重新让 AI 提议'], 403);
+  ai-bot-action.php:24   if ((int)($d['uid'] ?? 0) !== (int)$me['id']) aa_out(['ok' => false, 'error' => '批准令牌不属于当前账号'], 403);
+  ai-bot-action.php:26   $action = (string)($d['action'] ?? '');
+  ai-bot-action.php:28   $allowed = ['delete_message', 'ban_user', 'delete_user', 'set_role', 'unban_user'];
+  ai-bot-action.php:29   if (!in_array($action, $allowed, true) || empty($cfg['permissions'][$action])) {
+  ai-bot-action.php:30   aa_out(['ok' => false, 'error' => '该动作未授权'], 403);
+
+== 判定 ==
+  [符合] jti = 12 字节随机(96 bit), 在 HMAC 覆盖的 payload 内, exp=120s;
+         fopen(...,'x') 是 O_EXCL 原子创建 => 同一令牌第二次使用必然失败;
+         签名比较用 hash_equals(常量时间), 实现方式正确。
+         (注: 该声明针对 approve.php 短链审批的是另一套 token, 别混淆)
+  [缺陷1] 先烧令牌后鉴权: 第 22 行消费 jti, 第 24/29/30 行才校验 uid 归属、动作白名单、
+          cfg.permissions。任何持有他人令牌的人(令牌泄露/被日志带出)都能让该审批
+          永远失败 —— 单 token 的 DoS, 而且受害者重试时得到的是'批准已过期或无效'。
+  [缺陷2] /var/lib/chat-ai/used/ 只写不删(116-120 行无清理逻辑), 每批准一次一个文件,
+          永久累积(单目录 inode 增长); 目录不可写时 fopen 失败 -> 所有审批一律 403,
+          且 @ 抑制了错误原因, 运维难排查。
+  [缺陷3] 令牌未与调用方绑定(无 IP/会话指纹), 只靠 uid 字段; 群主账号会话被盗即可
+          重放未消费的 token(窗口 120s)。这属于既有权限模型, 但一次性只有 120s 强度。
+
+== 建议 ==
+  1) 把 uid/动作鉴权前移到 ai_verify_action 之前(先验身份再烧 jti):
+     先解析 payload(不落盘)校验 uid==me.id 与动作许可, 最后再 fopen 'x' 占位;
+  2) used 文件按日期分目录 + cron 清理(>7 天), 或用 DB 唯一键替代文件;
+  3) 目录不可写时返回 500 并记日志, 不要伪装成'令牌过期'。
+
+== 判定标准 ==
+  一次性语义成立(声明符合) => 本项不计为'文档声言不符'; 上述 3 处为 P3 加固项。
+
+RESULT: CONFIRMED

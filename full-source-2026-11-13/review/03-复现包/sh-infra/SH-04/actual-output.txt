@@ -1,0 +1,69 @@
+== 0. 源码事实（work/src 行号）==
+failover.sh:26: hb_age() {
+failover.sh:27: [ -f "$HB_FILE" ] || { echo none; return; }
+failover.sh:28: local v now; v=$(cat "$HB_FILE" 2>/dev/null); [ -z "$v" ] && { echo none; return; }
+failover.sh:29: [ "$v" = "0" ] && { echo bye; return; }
+failover.sh:30: now=$(date +%s); echo $(( now - v ))
+failover.sh:31: }
+failover.sh:160: AGE=$(hb_age)
+failover.sh:161: HB_FRESH=no; NOTE=""
+failover.sh:162: case "$AGE" in
+failover.sh:163: bye)  NOTE="家里主动报停";;
+failover.sh:164: none) NOTE="从未收到心跳";;
+failover.sh:165: *)    if [ "$AGE" -le "$HB_TIMEOUT" ]; then HB_FRESH=yes; else NOTE="心跳已停 ${AGE}s"; fi;;
+failover.sh:166: esac
+failover.sh:199: if [ "$HB_FRESH" = yes ]; then
+failover.sh:200: # 2026-10-30 fix: 心跳正常说明家里 MC 活着且正在写世界; 此时切云会双写(铁律7)。
+failover.sh:201: # CGNAT / 端口映射失效正好命中此分支 -> 只告警, 永不自动切云; 需人工 force-cloud。
+failover.sh:202: log "告警 连续${N}次: 心跳正常但外网连不上($TARGET) -> 家里MC活着, 拒绝切云以免双写世界 (需人工 force-cloud)"
+failover.sh:203: echo 0 > "$CNTF"
+failover.sh:204: exit 0
+failover.sh:205: fi
+--- home-mc-alive.sh ---
+home-mc-alive.sh:11: if [ -n "$v" ] && [ "$v" != "0" ]; then
+home-mc-alive.sh:12: now=$(date +%s)
+home-mc-alive.sh:13: age=$(( now - v ))
+home-mc-alive.sh:14: if [ "$age" -ge 0 ] && [ "$age" -lt "$HB_TIMEOUT" ]; then
+
+[+] failover.sh:26-31 无 `-ge 0`；home-mc-alive.sh:14 有 `-ge 0`。两个组件对同一数据结论相反。
+
+== 1. 时钟/时间戳矩阵（假设家里外网 25565 不可达）==
+   场景                                 HB 值       AGE      failover 判定分支                home-mc-alive
+   正常（心跳 5 秒前）                        1762499995 5        199-205 心跳正常但外网不可达           alive=1
+   心跳刚好 45 秒                          1762499955 45       199-205 心跳正常但外网不可达           alive=0
+   心跳 46 秒（略超时）                       1762499954 46       186-223 失联计数                 alive=0
+   家庭时钟超前 120 秒（未来）                   1762500120 -120     199-205 心跳正常但外网不可达           alive=0
+   家庭时钟超前 1 天（未来）                     1762586400 -86400   199-205 心跳正常但外网不可达           alive=0
+
+== 2. 未来时间戳下的连续 cron 行为（家里真的挂了）==
+   场景 a：心跳文件被一次性写成未来 +120s，之后不再更新
+     第1轮 age=-60    HB_FRESH=True  -> 199-205 心跳正常但外网不可达
+     第2轮 age=0      HB_FRESH=True  -> 199-205 心跳正常但外网不可达
+     第3轮 age=60     HB_FRESH=False -> 186-223 失联计数
+     第4轮 age=120    HB_FRESH=False -> 186-223 失联计数
+     第5轮 age=180    HB_FRESH=False -> 186-223 失联计数
+     => 抑制只持续到“云端时钟追上未来时间戳”，本例约 2 轮（120 秒）。
+
+   场景 b：家庭侧 RTC/NTP 长期超前 120 秒（每 60 秒用家庭时间写一次心跳）
+     第1轮 家庭写入=1762500180  age=-120   HB_FRESH=True  -> 199-205 心跳正常但外网不可达
+     第2轮 家庭写入=1762500240  age=-120   HB_FRESH=True  -> 199-205 心跳正常但外网不可达
+     第3轮 家庭写入=1762500300  age=-120   HB_FRESH=True  -> 199-205 心跳正常但外网不可达
+     第4轮 家庭写入=1762500360  age=-120   HB_FRESH=True  -> 199-205 心跳正常但外网不可达
+     第5轮 家庭写入=1762500420  age=-120   HB_FRESH=True  -> 199-205 心跳正常但外网不可达
+     => AGE 恒为 -120，HB_FRESH 恒为真，自动切云被**无限期**禁用。
+
+   两个场景下 home-mc-alive 都返回 alive=0（其 -ge 0 拦住），
+   即“防双写检查说家里已停”，但决定层说“家里心跳正常”，二者矛盾。
+
+== 3. 反方向：家庭时钟落后 > 45 秒 ==
+   时钟落后 0    秒 -> AGE=5      HB_FRESH=True  169-177 健康
+   时钟落后 30   秒 -> AGE=35     HB_FRESH=True  169-177 健康
+   时钟落后 46   秒 -> AGE=51     HB_FRESH=False 178-185 心跳异常但可达
+   时钟落后 120  秒 -> AGE=125    HB_FRESH=False 178-185 心跳异常但可达
+   => 落后时更易判“失联”，会误触发切云（另一个方向的风险）。
+
+   [判定] 未来时间戳导致“不会自动切云”的场景数: 3
+
+VERDICT: REPRODUCED
+
+[exit code] 0

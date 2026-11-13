@@ -1,0 +1,38 @@
+# actual-output.txt —— API-07 状态变更 action 不要求 POST，GET 可触发 logout/tos_*
+# 生成时间: 2026-11-08 13:11:14   耗时: 0.09s   退出码: 0
+# 命令: python.exe poc.py   （工作目录: API-07-get-state-change）
+# 说明: 本输出由脚本真实执行产生；未联网、未访问生产环境。
+# ----------------------------------------------------------------------
+api.php:7   action 来源： $action = isset($_GET['action']) ? (string)$_GET['action'] : '';
+api.php:9   method 判断： if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
+
+  action=logout       读 POST 参数=否     写操作=是
+    分支代码：
+      case 'logout': {
+      $__lu = current_user(); if ($__lu) { try { device_revoke_all((int)$__lu['id']); } catch (Throwable $e) {} }
+      setcookie(COOKIE_NAME, '', ['expires' => time() - 3600, 'path' => '/', 'secure' => true, 'httponly' => true, 'samesite' => 'Lax']);
+      jout(['ok' => true]);
+      }
+  action=tos_agree    读 POST 参数=否     写操作=是
+    分支代码：
+      case 'tos_agree': {
+      $u = require_login();
+      db()->prepare('UPDATE users SET tos_version=?, tos_agreed_at=NOW(), tos_ip=?, tos_ua=? WHERE id=?')->execute(['2026-10-17', client_ip(), substr((string)($_SERVER['HTTP_USER_AGENT'] ?? ''), 0, 255), (int)$u['id']]);
+      jout(['ok' => true]);
+      }
+  action=tos_decline  读 POST 参数=否     写操作=是
+    分支代码：
+      case 'tos_decline': {
+      $u = require_login();
+      device_revoke_all((int)$u['id']);
+      jout(['ok' => true]);
+      }
+
+可被跨站触发的 GET 链接（任意第三方页面放一张 <img> 或一个 <a>）：
+  <img src="https://chat.lzj2012.top/api.php?action=logout">            # 非顶层导航，Lax 不发送 Cookie -> 实际需顶层导航
+  <a href="https://chat.lzj2012.top/api.php?action=logout">点我</a>     # 顶层导航，Lax 会带 Cookie -> 有效
+  <a href="https://chat.lzj2012.top/api.php?action=tos_agree">同意</a>  # 静默把 TOS 标记为已同意
+
+结论：GET 侧没有 CSRF 校验，logout/tos_* 至少可被“顶层导航”型 CSRF 触发（P3）；
+      正确修法是把状态变更 action 全部强制 POST（与 API-01 的 fail-closed 一起做）。
+RESULT: PASS

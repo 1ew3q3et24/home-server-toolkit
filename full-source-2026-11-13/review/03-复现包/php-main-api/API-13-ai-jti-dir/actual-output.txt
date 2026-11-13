@@ -1,0 +1,45 @@
+# actual-output.txt —— API-13 AI 审批 used/ 目录无清理；AI 速率限制 fail-open
+# 生成时间: 2026-11-08 13:11:16   耗时: 0.21s   退出码: 0
+# 命令: python.exe poc.py   （工作目录: API-13-ai-jti-dir）
+# 说明: 本输出由脚本真实执行产生；未联网、未访问生产环境。
+# ----------------------------------------------------------------------
+---- cloud/var/www/chat-lib/ai-common.php:103-122 ----
+ 103| function ai_verify_action(array $cfg, string $token): ?array {
+ 104|     $parts = explode('.', $token);
+ 105|     if (count($parts) !== 2) return null;
+ 106|     [$b, $sig] = $parts;
+ 107|     $exp = hash_hmac('sha256', $b, (string)$cfg['action_secret']);
+ 108|     if (!hash_equals($exp, $sig)) return null;
+ 109|     $pad = strlen($b) % 4;
+ 110|     if ($pad) $b .= str_repeat('=', $pad);
+ 111|     $raw = base64_decode(strtr($b, '-_', '+/'));
+ 112|     $d = json_decode((string)$raw, true);
+ 113|     if (!is_array($d) || (int)($d['exp'] ?? 0) < time()) return null;
+ 114|     $jti = (string)($d['jti'] ?? '');
+ 115|     if ($jti === '' || !preg_match('/^[0-9a-f]{24}$/', $jti)) return null;
+ 116|     $dir = '/var/lib/chat-ai/used';
+ 117|     if (!is_dir($dir)) @mkdir($dir, 0750, true);
+ 118|     $fp = @fopen($dir . '/' . hash('sha256', $jti), 'x');
+ 119|     if (!$fp) return null;
+ 120|     fclose($fp);
+ 121|     return $d;
+ 122| }
+-------------------
+
+1) used/ 目录（jti 一次性标记）：
+   创建点： ai-common.php:116-120  fopen($dir.'/'.hash('sha256',$jti), 'x')
+   是否有清理/过期删除逻辑： 否 <<< 每次执行动作永久留 1 个文件
+   影响：动作执行次数 = 文件数；正常使用下增长慢，但无上界（且 inode 永不回收）。
+
+2) ai-bot.php 的速率限制：
+   限制块位置：ai-bot.php:79-97，整段包在 `if (is_dir($dir) && is_writable($dir))` 内
+   /var/lib/chat-ai 不存在或不可写时 -> 既不限流也不审计（fail-open）；
+   且 write 失败被 @ 抑制（ai-bot.php:82/123），运维察觉不到。
+
+3) 其它：
+   * ai_config() 在 config.json 缺失时返回默认值，其中 action_secret 每次请求随机生成 -> 
+     ai-bot.php 签发的令牌在 ai-bot-action.php 必然验签失败（fail-closed，不构成漏洞，但属可用性陷阱）；
+   * ai-bot-action.php 的权限二次校验（第 29 行）是正确的，值得保留。
+
+结论：P3（加固项：清理 used/、限流 fail-closed）。当前仅群主可触发，实际风险低。
+RESULT: PASS

@@ -1,0 +1,27 @@
+# 本文件由本机真实运行生成：
+# 命令: C:\Users\18012\.dsh\dsh-runtimes\dsh-primary-runtime\dependencies\python\python.exe work\repro\php-app-api\APPAPI-02\poc.py
+# 退出码: 0
+# ------------------------------------------------------------
+== 1) 未验证邮箱账号（verified=0）的鉴权结果
+   require_login() -> True   (lib.php:227-232，不看 verified)
+   app_user()      -> True   (app-api.php:33-44，不看 verified)
+
+== 2) 该账号执行 MC 绑定的判定（mc-api submit / approve_link / app-api mc_approve）
+   绑定前置 allow_login=True -> 绑定写入 mc_bindings(user_id, mc_name)
+
+== 3) 绑定后闸门 check() 的准入判定
+   user.verified=1 -> check(): bound=True tos=已同意 -> 允许进服=True
+   user.verified=0 -> check(): bound=True tos=已同意 -> 允许进服=True
+
+== 4) 对照：同一个未验证账号在聊天室被明确拒绝
+   api.php:215  send   : if ((int)$u['verified'] !== 1) fail('请先验证邮箱再发言', 403)
+   api.php:251  upload : if ((int)$u['verified'] !== 1) fail('请先验证邮箱再上传', 403)
+
+   源码核对 mc-api.php submit 分支: 无 verified 校验 = True
+   源码核对 mc-api.php approve_link 分支: 无 verified 校验 = True
+   源码核对 app-api.php mc_approve 分支: 无 verified 校验 = True
+   源码核对 api.php 存在 verified 强制校验（对照）: 无 verified 校验 = True
+
+结论: 未验证邮箱的账号（verified=0）可以完成 MC 名绑定，而闸门 check() 只看
+      绑定与 TOS，不校验 verified -> 该账号可进入 MC 服务器；与聊天室“未验证不能发言/上传”的策略互相矛盾。
+RESULT: PASS

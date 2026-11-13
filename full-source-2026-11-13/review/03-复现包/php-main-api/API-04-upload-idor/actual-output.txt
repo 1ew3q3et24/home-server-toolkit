@@ -1,0 +1,95 @@
+# actual-output.txt —— API-04 action=file 任意登录用户按 id 读任意上传；删图不删文件
+# 生成时间: 2026-11-08 13:11:13   耗时: 0.38s   退出码: 0
+# 命令: python.exe poc.py   （工作目录: API-04-upload-idor）
+# 说明: 本输出由脚本真实执行产生；未联网、未访问生产环境。
+# ----------------------------------------------------------------------
+---- cloud/var/www/chat/api.php:313-330 ----
+ 313|   case 'file': {
+ 314|     require_login();
+ 315|     $id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
+ 316|     $st = db()->prepare('SELECT id, mime, ext FROM uploads WHERE id = ?');
+ 317|     $st->execute([$id]);
+ 318|     $row = $st->fetch();
+ 319|     if (!$row) { http_response_code(404); header('Content-Type: text/plain; charset=utf-8'); exit('not found'); }
+ 320|     $path = UPLOAD_DIR . '/' . (int)$row['id'] . '.' . $row['ext'];
+ 321|     if (!is_file($path)) { http_response_code(404); header('Content-Type: text/plain; charset=utf-8'); exit('gone'); }
+ 322|     header('Content-Type: ' . $row['mime']);
+ 323|     header('Content-Length: ' . (string)filesize($path));
+ 324|     header('X-Content-Type-Options: nosniff');
+ 325|     header('Content-Security-Policy: default-src \'none\'; sandbox');
+ 326|     header('Content-Disposition: inline; filename="image.' . $row['ext'] . '"');
+ 327|     header('Cache-Control: private, max-age=86400');
+ 328|     readfile($path);
+ 329|     exit;
+ 330|   }
+-------------------
+---- cloud/var/www/chat/api.php:384-402 ----
+ 384|   case 'admin_delmsg': {
+ 385|     $me = admin_user();
+ 386|     $id = (int)post('id');
+ 387|     $st = db()->prepare('SELECT m.id, m.user_id, m.body, u.role AS author_role FROM messages m JOIN users u ON u.id = m.user_id WHERE m.id = ?');
+ 388|     $st->execute([$id]);
+ 389|     $m = $st->fetch();
+ 390|     if (!$m) fail('消息不存在');
+ 391|     $author = (int)$m['user_id'];
+ 392|     $myRole = role_of($me);
+ 393|     $authorRole = (int)$m['author_role'];
+ 394|     // 删除权限 (2026-10-06 修):
+ 395|     //   只能删"比自己低"的人的消息; 管理员不能删自己的(群主可以); 谁都不能删群主的。
+ 396|     if ($author === (int)$me['id']) {
+ 397|       if ($myRole < ROLE_OWNER) fail('管理员不能删除自己的消息 (需要删除请找群主)', 403);
+ 398|     } else {
+ 399|       if ($authorRole >= ROLE_OWNER) fail('不能删除群主的消息', 403);
+ 400|       if ($authorRole >= $myRole) fail('不能删除同级或更高权限的人的消息', 403);
+ 401|     }
+ 402|     db()->prepare('DELETE FROM messages WHERE id = ?')->execute([$id]);
+-------------------
+
+file 分支实际具备的校验：
+  [无] 校验 uploads.user_id == 当前用户
+  [无] 联表 messages 校验消息未删除
+  [无] 校验上传者未被拉黑
+  [无] 校验上传者已邮箱验证
+
+admin_delmsg 是否清理 uploads（表/文件）： 否 <<< 图片原文件保留
+
+可复制的验证报文（在自有测试环境执行，需两个普通账号 A、B）：
+
+# 1) B 上传一张图片（记下返回的 file_id，例如 7）
+POST /api.php?action=upload HTTP/1.1
+Host: <测试域名>
+Cookie: chq=<B 的会话>
+Content-Type: multipart/form-data; boundary=----X
+
+------X
+Content-Disposition: form-data; name="file"; filename="a.png"
+Content-Type: image/png
+
+<PNG 字节>
+------X--
+
+# 2) A 直接按 id 读取 B 的图片（A 与 B 无任何关系，且 A 未验证邮箱也能读）
+GET /api.php?action=file&id=7 HTTP/1.1
+Host: <测试域名>
+Cookie: chq=<A 的会话>
+
+# 期望（漏洞成立）：HTTP 200 + image/png 字节；修复后：403/404
+
+# 3) 管理员删除那条图片消息后（admin_delmsg），文件仍可按 id 读取：
+POST /api.php?action=admin_delmsg HTTP/1.1
+Host: <测试域名>
+Cookie: chq=<管理员会话>
+Content-Type: application/x-www-form-urlencoded
+
+id=<图片消息 id>
+
+GET /api.php?action=file&id=7 HTTP/1.1
+Host: <测试域名>
+Cookie: chq=<任意登录用户>
+# 期望（漏洞成立）：仍返回 200 图片 —— “删除”只删了消息行，原始字节没有下架
+
+结论：file 分支仅 require_login() 后按 id 直取 uploads，不校验归属/消息状态；
+      admin_delmsg 只 DELETE messages，不删 uploads 行与磁盘文件 => 违规图片无法真正删除。
+      P2（越权/IDOR + 内容下架失效）。
+本脚本未发送任何网络请求（R3）。
+RESULT: R3

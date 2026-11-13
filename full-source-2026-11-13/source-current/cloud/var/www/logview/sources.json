@@ -1,0 +1,323 @@
+{
+ "default": "status",
+ "categories": [
+  {
+   "id": "status",
+   "name": "服务器状态",
+   "desc": "各服务与容器当前工作状态（由 logview-health.timer 每 30 秒刷新）"
+  },
+  {
+   "id": "mc",
+   "name": "Minecraft",
+   "desc": "切服、心跳、世界同步、MC 相关服务",
+   "sources": [
+    {
+     "id": "failover",
+     "label": "切服",
+     "type": "file",
+     "path": "/root/failover/failover.log",
+     "color": "#60a5fa"
+    },
+    {
+     "id": "hbrecv",
+     "label": "心跳接收",
+     "type": "file",
+     "path": "/root/failover/hb-recv.log",
+     "color": "#34d399"
+    },
+    {
+     "id": "hbaudit",
+     "label": "心跳驳回",
+     "type": "file",
+     "path": "/root/failover/hb-audit.log",
+     "color": "#f87171"
+    },
+    {
+     "id": "heartbeat",
+     "label": "心跳发送",
+     "type": "file",
+     "path": "/data/homelogs/heartbeat.log",
+     "color": "#4ade80"
+    },
+    {
+     "id": "ipcheck",
+     "label": "IP检测",
+     "type": "file",
+     "path": "/data/homelogs/ipcheck.log",
+     "color": "#fbbf24"
+    },
+    {
+     "id": "sync",
+     "label": "世界同步",
+     "type": "file",
+     "path": "/data/homelogs/sync.log",
+     "color": "#22d3ee"
+    },
+    {
+     "id": "mcai",
+     "label": "AI桥",
+     "type": "journal",
+     "unit": "mc-ai-bridge.service",
+     "color": "#a78bfa"
+    },
+    {
+     "id": "mcsrv",
+     "label": "MC服务",
+     "type": "journal",
+     "unit": "mc.service",
+     "color": "#f97316"
+    }
+   ]
+  },
+  {
+   "id": "site",
+   "name": "站点与接口",
+   "desc": "nginx、聊天室、One API、推送服务",
+   "sources": [
+    {
+     "id": "nginxacc",
+     "label": "访问日志",
+     "type": "file",
+     "path": "/var/log/nginx/access.log",
+     "color": "#58a6ff"
+    },
+    {
+     "id": "nginxerr",
+     "label": "错误日志",
+     "type": "file",
+     "path": "/var/log/nginx/error.log",
+     "color": "#f85149"
+    },
+    {
+     "id": "chat",
+     "label": "聊天室",
+     "type": "file",
+     "path": "/var/log/chat.log",
+     "color": "#38bdf8"
+    },
+    {
+     "id": "mail",
+     "label": "发信",
+     "type": "file",
+     "path": "/var/log/send-mail.log",
+     "color": "#f472b6"
+    },
+    {
+     "id": "cert",
+     "label": "证书",
+     "type": "file",
+     "path": "/var/log/cert-renew.log",
+     "color": "#a78bfa"
+    },
+    {
+     "id": "oneapi",
+     "label": "One API",
+     "type": "journal",
+     "unit": "one-api.service",
+     "color": "#22d3ee"
+    },
+    {
+     "id": "mercure",
+     "label": "Mercure",
+     "type": "journal",
+     "unit": "mercure.service",
+     "color": "#34d399"
+    },
+    {
+     "id": "centrifugo",
+     "label": "Centrifugo",
+     "type": "journal",
+     "unit": "centrifugo.service",
+     "color": "#60a5fa"
+    },
+    {
+     "id": "phpfpm",
+     "label": "PHP-FPM",
+     "type": "journal",
+     "unit": "php8.2-fpm.service",
+     "color": "#c084fc"
+    },
+    {
+     "id": "panel",
+     "label": "Panel",
+     "type": "journal",
+     "unit": "panel.service",
+     "color": "#fbbf24"
+    }
+   ]
+  },
+  {
+   "id": "backup",
+   "name": "备份与同步",
+   "desc": "云端配置备份、日志推送、归档与清理",
+   "sources": [
+    {
+     "id": "cloudbackup",
+     "label": "配置备份",
+     "type": "file",
+     "path": "/root/gitbackup/sync.log",
+     "color": "#3fb950"
+    },
+    {
+     "id": "cloudbackupj",
+     "label": "配置备份(服务)",
+     "type": "journal",
+     "unit": "cloud-backup.service",
+     "color": "#2ea043"
+    },
+    {
+     "id": "loghub",
+     "label": "日志推送",
+     "type": "file",
+     "path": "/var/log/openclaw-logs-hub.log",
+     "color": "#58a6ff"
+    },
+    {
+     "id": "archive",
+     "label": "归档",
+     "type": "journal",
+     "unit": "backup-archive.service",
+     "color": "#a371f7"
+    },
+    {
+     "id": "logret",
+     "label": "日志清理",
+     "type": "journal",
+     "unit": "log-retention.service",
+     "color": "#8b949e"
+    },
+    {
+     "id": "chatret",
+     "label": "聊天清理",
+     "type": "journal",
+     "unit": "chat-retention.service",
+     "color": "#8b949e"
+    }
+   ]
+  },
+  {
+   "id": "security",
+   "name": "安全",
+   "desc": "fail2ban、蜜罐、SSH 审计",
+   "sources": [
+    {
+     "id": "fail2ban",
+     "label": "Fail2ban",
+     "type": "file",
+     "path": "/var/log/fail2ban.log",
+     "color": "#f85149"
+    },
+    {
+     "id": "auth",
+     "label": "认证日志",
+     "type": "file",
+     "path": "/var/log/auth.log",
+     "color": "#fbbf24"
+    },
+    {
+     "id": "opencanary",
+     "label": "OpenCanary",
+     "type": "journal",
+     "unit": "opencanary.service",
+     "color": "#f97316"
+    },
+    {
+     "id": "endlessh",
+     "label": "Endlessh",
+     "type": "journal",
+     "unit": "endlessh.service",
+     "color": "#8b949e"
+    },
+    {
+     "id": "sshj",
+     "label": "SSH",
+     "type": "journal",
+     "unit": "ssh.service",
+     "color": "#60a5fa"
+    },
+    {
+     "id": "opencanary-file",
+     "label": "蜜罐日志",
+     "type": "jsonl",
+     "path": "/var/log/opencanary/opencanary.log",
+     "color": "#fb923c"
+    }
+   ]
+  },
+  {
+   "id": "net",
+   "name": "网络与 DDNS",
+   "desc": "光猫 DDNS 上报与更新记录",
+   "sources": [
+    {
+     "id": "ddns",
+     "label": "DDNS 更新",
+     "type": "file",
+     "path": "/var/log/ddns-update.log",
+     "color": "#22d3ee"
+    },
+    {
+     "id": "ddnsreq",
+     "label": "DDNS 访问",
+     "type": "file",
+     "path": "/var/log/nginx/ddns-test-access.log",
+     "color": "#8b949e"
+    }
+   ]
+  },
+  {
+   "id": "system",
+   "name": "系统",
+   "desc": "系统日志、数据库、容器",
+   "sources": [
+    {
+     "id": "syslog",
+     "label": "Syslog",
+     "type": "file",
+     "path": "/var/log/syslog",
+     "color": "#8b949e"
+    },
+    {
+     "id": "mariadb",
+     "label": "MariaDB",
+     "type": "journal",
+     "unit": "mariadb.service",
+     "color": "#34d399"
+    },
+    {
+     "id": "systemd",
+     "label": "systemd",
+     "type": "journal",
+     "unit": "systemd-journald.service",
+     "color": "#a371f7"
+    },
+    {
+     "id": "cron",
+     "label": "Cron",
+     "type": "journal",
+     "unit": "cron.service",
+     "color": "#fbbf24"
+    },
+    {
+     "id": "hbbs",
+     "label": "RustDesk hbbs",
+     "type": "docker",
+     "container": "hbbs",
+     "color": "#22d3ee"
+    },
+    {
+     "id": "hbbr",
+     "label": "RustDesk hbbr",
+     "type": "docker",
+     "container": "hbbr",
+     "color": "#2ea043"
+    }
+   ]
+  },
+  {
+   "id": "all",
+   "name": "全部",
+   "desc": "所有来源按时间混排（排查跨服务问题时用）"
+  }
+ ]
+}

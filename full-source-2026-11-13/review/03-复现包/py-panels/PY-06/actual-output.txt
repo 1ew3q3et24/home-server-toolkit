@@ -1,0 +1,51 @@
+
+==============================================================================
+PY-06  会话令牌不可吊销 / 无会话绑定（R1，离线）
+==============================================================================
+
+[1] 被审代码（原样）：
+  31| def make_token(a):
+  32|     ts = str(int(time.time()))
+  33|     sig = hmac.new(bytes.fromhex(a["secret"]), ts.encode(), hashlib.sha256).hexdigest()
+  34|     return ts + "." + sig
+  35| 
+  36| def token_ok(a, tok):
+  37|     try:
+  38|         ts, sig = tok.split(".", 1)
+  39|     except Exception:
+  40|         return False
+  41|     try:
+  42|         if int(time.time()) - int(ts) > SESSION_TTL:
+  43|             return False
+  44|     except Exception:
+  45|         return False
+  46|     exp = hmac.new(bytes.fromhex(a["secret"]), ts.encode(), hashlib.sha256).hexdigest()
+  47|     return hmac.compare_digest(exp, sig)
+ 390| @app.route("/logout")
+ 391| def logout():
+ 392|     r = Response('<meta http-equiv=refresh content="0;url=/login">已退出</div>')
+ 393|     r.delete_cookie(COOKIE)
+ 394|     return r
+
+[2] 登录成功：HTTP 200
+    Set-Cookie: ***=1794115242.0955a74ebb61e16f22337ff7b510b88c33a840ba65e9713c731948ce47066b9a; Path=/; Max-Age=43200; Secure; HttpOnly; SameSite=Lax
+    令牌明文: 1794115242.0955a74ebb61e16f22337ff7b510b88c33a840ba65e9713c731948ce47066b9a（时间戳.HMAC，长度 75）
+
+[3] 登录态访问 /: HTTP 200
+
+[4] GET /logout: HTTP 200，客户端 jar 中 cookie 数=0
+    服务端没有保存任何“已吊销令牌”状态（源码无 sessions_valid_after/jti/黑名单）
+
+[5] 重新使用登出前的同一个令牌: HTTP 200，仍可访问管理页=True
+
+[6] 连续两次 make_token() 结果: 1794115242.0955a74ebb61e16f22337ff7b510b88c33a840ba65e9713c731948ce47066b9a / 1794115242.0955a74ebb61e16f22337ff7b510b88c33a840ba65e9713c731948ce47066b9a -> 相同=True（无随机 nonce，无法按设备吊销）
+
+[7] token_ok 对旧令牌的判定: True（有效期 12h = 43200 秒）
+
+[8] app.py 中吊销相关关键字: {'revoke': 0, 'valid_after': 0, 'jti': 0, 'denylist': 0, 'blacklist': 0, 'sessions': 0}
+  [OK]   登出后仍可用旧令牌访问管理页（无服务端吊销）
+  [OK]   令牌只由时间戳决定，无每会话随机数/绑定
+  [OK]   app.py 中不存在任何吊销/黑名单/sessions_valid_after 机制
+  [OK]   Cookie 属性本身正确（HttpOnly/Secure/SameSite=Lax），问题在取消能力
+
+RESULT: PASS  PY-06：令牌 12h 不可吊销、无会话绑定

@@ -1,0 +1,61 @@
+
+==============================================================================
+PY-09  管理凭据文件位于 /var/www/panel 下的暴露面（R1 影响链 + R3 暴露面）
+==============================================================================
+
+==============================================================================
+PY-09-A  secret 泄露 -> 免密伪造会话（R1，离线）
+==============================================================================
+
+[1] 被审代码（原样）：
+  13| AUTH_FILE = "/var/www/panel/panel-auth.json"
+  14| COOKIE = "***"
+  31| def make_token(a):
+  32|     ts = str(int(time.time()))
+  33|     sig = hmac.new(bytes.fromhex(a["secret"]), ts.encode(), hashlib.sha256).hexdigest()
+  34|     return ts + "." + sig
+
+[2] 假设 /var/www/panel/panel-auth.json 被 HTTP 取走（内容形态，值随机生成）：
+    {salt: 9a084f53..., hash: 99d3b886..., secret: 1a18f683...}
+
+[3] 用泄露的 secret 直接算出会话令牌: 1794115247.710a0de03ca23f1020d024122b1652a969bad65b67ee2af54bdba1ef241cfdec
+    校验结果 app.token_ok(...) = True
+    带着伪造 cookie 访问 / : HTTP 200，看到管理页=True（全程未提交口令）
+
+[4] 同时泄露的 hash 可离线爆破口令（PBKDF2 200000 轮，攻击者本地算）。
+
+==============================================================================
+PY-09-B  静态可达性核对（R3，需真实环境；本脚本不联网）
+==============================================================================
+
+无法在本机复现的具体技术原因：
+  1. 缺失运行环境：交付包（46 文件）没有包含任何 nginx 站点配置，
+     而简报/合并包“审查重点”第 6 条点名的 etc/nginx/sites-enabled/ddos 也未随包交付；
+     `cloud/var/www/panel/` 的部署方式（静态根 or 反代）无从得知。
+  2. 需要线上配置/文件状态：需要 panel.* 站点的 server 块 root 指向 /var/www/panel，
+     或存在 `location ~ \.json$ { root /var/www; }` 之类的静态兜底；
+     此外 panel-auth.json 由未交付的 panel.service 生成，其真实权限位未知。
+  3. 需要真实主机交互：确认方式必须向被审域名发请求，本项目红线禁止（也不应在生产验证）。
+  4. 无需多要素时序；也无需真机。
+
+正确部署下（本文件不应可达）的核对步骤（由运维方在自有测试环境执行）：
+  a) nginx -T | grep -nE 'server_name|root |proxy_pass' | grep -n -A3 -B3 panel
+     确认 panel.* 的 root 是否为 /var/www/panel 或 /var/www。
+  b) 在**测试域名**上：
+       curl -sS -o /tmp/pa.json -w '%{http_code}\n' https://panel.<测试域>/panel-auth.json
+     期望 403/404；若 200 且内容含 "salt"/"hash"/"secret"，即为 P0 级凭据泄露（本报告按 P1 保守定级）。
+  c) 同样检查（同目录/同根）：
+       /panel-auth.json  /../panel-auth.json  /%2e%2e/panel/panel-auth.json
+       https://logs.<测试域>/sources.json   https://logs.<测试域>/status.json
+  d) 若可达：立即把凭据文件移出 Web 根（如 /etc/logview/panel-auth.json，chmod 600，
+     属主与 Flask 运行用户一致），轮换 secret（所有现有会话失效）并改口令。
+
+判定标准：
+  - 200 且 JSON 含 secret  -> 高危确认（P0），按本报告 PY-09 修复建议执行；
+  - 403/404 且 nginx root 不含 /var/www/panel -> 不可达，降级为 P3 加固（仍建议移出 Web 根）。
+
+
+  [OK]   A（R1）：已知 secret 可免密伪造会话并访问管理页
+  [R3]   B：panel-auth.json 是否可被公网读取 -> 需真实 nginx 配置，本机无法验证
+
+RESULT: NEED_REAL_ENV  PY-09：影响链已 R1 证实，暴露面需真实环境确认

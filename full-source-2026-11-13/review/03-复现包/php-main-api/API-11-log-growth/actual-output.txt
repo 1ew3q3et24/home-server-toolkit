@@ -1,0 +1,29 @@
+# actual-output.txt —— API-11 chat.log 无轮转/无上限，可被灌日志撑爆磁盘
+# 生成时间: 2026-11-08 13:11:16   耗时: 0.19s   退出码: 0
+# 命令: python.exe poc.py   （工作目录: API-11-log-growth）
+# 说明: 本输出由脚本真实执行产生；未联网、未访问生产环境。
+# ----------------------------------------------------------------------
+---- cloud/var/www/chat-lib/lib.php:40-43 ----
+  40| function chat_log(string $tag, string $msg): void {
+  41|   $msg = str_replace([chr(13), chr(10)], ' ', $msg);
+  42|   @file_put_contents(CHAT_LOG, date('Y-m-d') . 'T' . date('H:i:s') . ' [' . $tag . '] ' . $msg . chr(10), FILE_APPEND | LOCK_EX);
+  43| }
+-------------------
+
+chat_log 是否做大小上限/轮转： 否 <<< 无上限
+chat_decoy_log 是否做大小上限： 是
+
+可被写入 chat.log 的入口（均为攻击者可控频率）：
+   api.php:194    登录失败         ip_bump('login', 60)：单 IP 每分钟 60 次
+   api.php:172    重置密码成功       需正确验证码（低频）
+   api.php:309    上传成功         ip_bump('upload', 100/天)
+   api.php:105    注册           开放模式 5/天/IP；邀请模式需码
+   lib.php:338    发信/发信失败      10/天/IP
+
+按单 IP 登录失败 60 次/分钟估算：
+   每天日志行数 = 86400，按平均 110 字节/行 ≈ 9.1 MB/天/IP
+   100 个 IP 持续打 = 906 MB/天；且没有任何轮转/上限，磁盘占用单调增长。
+
+补充：chat_decoy_log 有 2MB 上限（lib.php:157-161），说明作者知道要限日志，主日志漏了。
+结论：P3（可用性/磁盘 DoS，需较多 IP 或长时间）。
+RESULT: PASS

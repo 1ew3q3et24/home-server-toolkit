@@ -1,0 +1,72 @@
+== 0. 源码事实（work/src 行号）==
+logview-health.py:17: def port_open(port):
+logview-health.py:18:     try:
+logview-health.py:19:         with socket.create_connection(("127.0.0.1", int(port)), timeout=1.5):
+logview-health.py:20:             return True
+logview-health.py:21:     except Exception:
+logview-health.py:22:         return False
+logview-health.py:24: def cpu_percent():
+logview-health.py:164:         if active == "failed" or (result not in ("", "success")):
+logview-health.py:165:             res["state"] = "异常"
+logview-health.py:166:         elif active == "active":
+logview-health.py:167:             if item.get("port"):
+logview-health.py:168:                 ok = port_open(item["port"])
+logview-health.py:169:                 res["port_ok"] = ok
+logview-health.py:170:                 res["state"] = "良好" if ok else "正常"
+logview-health.py:171:             else:
+logview-health.py:173:         elif active in ("inactive", "deactivating"):
+logview-health.py:174:             res["state"] = "停止"
+logview-health.py:175:         else:
+logview-health.py:176:             res["state"] = "异常"
+logview-health.py:187:     if item.get("port") and "port_ok" not in res:
+logview-health.py:188:         res["port_ok"] = port_open(item["port"])
+logview-health.py:191: def main():
+logview-health.py:192:     try:
+logview-health.py:193:         items = json.load(open(CFG))
+logview-health.py:194:     except Exception:
+logview-health.py:195:         items = []
+logview-health.py:196:     out = {
+logview-health.py:197:         "checked": datetime.datetime.now().astimezone().isoformat(timespec="seconds"),
+logview-health.py:198:         "system": sysinfo(),
+logview-health.py:199:         "items": [check(i) for i in items],
+logview-health.py:200:     }
+logview-health.py:201:     tmp = OUT + ".tmp"
+logview-health.py:202:     with open(tmp, "w") as f:
+logview-health.py:203:         json.dump(out, f, ensure_ascii=False)
+logview-health.py:204:     os.replace(tmp, OUT)
+logview-health.py:205:     s = out["system"]
+logview-health.py:206:     line = (out["checked"] + " cpu=" + str(s["cpu_percent"]) + "% mem=" + str(s["mem_percent"]) + "% disk=" + str(s["disk_percent"]) + "% " +
+logview-health.py:207:             " ".join((x["name"] + "=" + x["state"]) for x in out["items"]))
+logview-health.py:208:     try:
+logview-health.py:211:         if os.path.getsize(LOG) > 2000000:
+logview-health.py:216: if __name__ == "__main__":
+
+== 1. 状态映射矩阵（service 类型 + 声明了 port）==
+   场景                           active   port_open  state      是否合理
+   服务 active 且端口正常              active   True       良好         合理
+   服务 active 但端口不通（进程僵死/未监听）    active   False      正常         不合理：应为异常
+     <== 缺陷：端口不通却标 '正常'，面板上看不出服务实际不可用
+   服务 failed                    failed   False      异常         合理
+   服务 inactive（被停）              inactive False      停止         合理（但面板不一定告警）
+   服务 activating（启动中）           activating False      异常         偏严：被标异常
+   未知状态                         reloading-x False      异常         偏严
+
+== 2. 端口探测本身的局限（第17-22行）==
+   - 只连 127.0.0.1 的 TCP：服务绑在别的地址/只监听 IPv6 时会误判；
+   - 只验证 TCP 三次握手：进程在听但业务已坏（DB 连不上、返回 500）仍算“通”；
+   - timeout=1.5s：机器高负载时可能误报不通。
+
+== 3. 退出码：main() 无返回值 -> 永远 0 ==
+   文件末尾: '            os.replace(LOG, LOG + ".1")\n    except Exception:\n        pass\n\nif __name__ == "__main__":\n    main()'
+   是否可能返回非零: 否（恒 0）
+   => 若被 systemd timer/监控当作健康检查，它永远不会失败。
+
+== 4. 配置缺失时静默 ==
+   第191-195行：services.json 读取失败 -> items=[] -> status.json 里 items 为空，
+   页面只是“没有条目”，不会报配置损坏。
+   第66-135行 sysinfo() 各段都 try/except 吞异常 -> 读不到 /proc/net/dev 时
+   net_* 字段缺失，ddos-monitor.py:109-110 取 0 -> 判定永不触发（见 SH-12）。
+
+VERDICT: REPRODUCED
+
+[exit code] 0

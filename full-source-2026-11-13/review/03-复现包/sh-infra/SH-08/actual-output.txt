@@ -1,0 +1,54 @@
+== 0. 引用核对（每条都必须能在 work/src 的行里命中）==
+   /etc/nginx/sites-enabled/ddos              引用=合并包文字（无源码行）
+   /etc/nginx/ddos-mode.conf                  cloud/usr/local/sbin/ddos-mode.sh:3 命中=是
+   /etc/nginx/sites-enabled/*                 cloud/usr/local/sbin/ddos-mode.sh:10 命中=是
+   /var/www/ddos/ddos.html                    cloud/usr/local/sbin/ddos-mode.sh:18 命中=是
+   /etc/msmtprc（msmtp -a exmail）              cloud/usr/local/sbin/send-mail.py:116 命中=是
+   /root/.config/resend/key                   cloud/usr/local/sbin/send-mail.py:9 命中=是
+   /root/.config/cloudflare/token             cloud/usr/local/sbin/cf-set-a.sh:10 命中=是
+   /root/.config/rainyun/rainyun.env          cloud/usr/local/sbin/failover.sh:6 命中=是
+   /var/www/logview/services.json             cloud/usr/local/sbin/logview-health.py:6 命中=是
+   /var/www/logview/status.json               cloud/usr/local/sbin/ddos-monitor.py:4 命中=是
+   /data/mcserver/world                       cloud/usr/local/sbin/failover.sh:101 命中=是
+   /data/backups                              cloud/usr/local/sbin/failover.sh:21 命中=是
+   sudoers: NOPASSWD /usr/local/sbin/send-mail.py cloud/var/www/chat-lib/lib.php:332 命中=是
+   systemd unit: mc.service                   cloud/usr/local/sbin/failover.sh:146 命中=是
+   家庭侧心跳写入脚本                                  cloud/usr/local/sbin/failover.sh:12 命中=是
+   核对通过 14 条
+
+== 1. 缺失清单（影响审查结论的配置/脚本）==
+   路径                                           类别       影响
+   /etc/nginx/sites-enabled/ddos                配置       合并包“审查重点 6”与“测试结果 nginx -t（含 ddos-mode 前置 server）”所指文件；缺失导致 503 前置 server / 排除项 / include 顺序完全无法审查（SH-07）
+   /etc/nginx/ddos-mode.conf                    生成物      由脚本生成，本身可接受；但 nginx.conf 是否 `include` 它、是否位于 sites-enabled 之前（“前置”）未交付，无法核对
+   /etc/nginx/sites-enabled/*                   配置       第10行 grep 的唯一输入；站点名集合不可知，NAMES 生成后果（哪些站点 503）无法确定
+   /var/www/ddos/ddos.html                      资源       error_page 在 :17/:28，location = /ddos.html 在 :18/:29；文件缺失时 503 页可能变成错误页/500，体验与信息泄露都不确定
+   /etc/msmtprc（msmtp -a exmail）                配置/凭据    SMTP 备通道全部参数（host/port/tls/tls_trust_file/口令）都在此文件；缺失导致“证书校验是否开启”“口令是否明文”无法审查（SH-15）
+   /root/.config/resend/key                     凭据       （合理不交付，仅提示权限风险）
+   /root/.config/cloudflare/token               凭据       （合理不交付，仅提示权限风险）
+   /root/.config/rainyun/rainyun.env            配置/凭据    failover 的 MC_FQDN/HOME_FQDN/CLOUD_IP 全部来自此文件（第74-76行）；文件缺失即 die。路径仍叫 rainyun，与 v2 声明“移除无用的 Rainyun Key 依赖”需人工确认
+   /var/www/logview/services.json               配置       健康检查的“服务/定时器/容器清单”全靠它；缺失则 items=[]，status.json 的 items 为空，页面上看不出任何异常（SH-14）
+   /var/www/logview/status.json                 生成物      ddos-monitor 的带宽输入；由 logview-health.py 生成，缺失时 ddos-monitor 直接 return（静默停摆，SH-12）
+   /data/mcserver/world                         数据       切回前归档的对象（第99-103行）；目录布局/大小/是否有 session.lock 未交付，归档一致性无法评估（SH-10）
+   /data/backups                                数据       第21行 mkdir；第101行写 tar。无保留策略，磁盘水位不可知（SH-10）
+   sudoers: NOPASSWD /usr/local/sbin/send-mail.py 配置       `sudo -n` 授权粒度决定“谁能调用发信脚本、能否传任意收件人/主题”；缺失则 send-mail 的滥用面无法定论（SH-15）
+   systemd unit: mc.service                     配置       Restart/User/ExecStartPre/成功判据都不可见；watchdog 与 systemd 双重看护是否冲突无法核对（SH-03/SH-17）
+   家庭侧心跳写入脚本                                    脚本       写 /root/failover/heartbeat 的一方不在交付包内；SH-01 的注入可达性因此只能判“高可能”
+
+   缺失项合计: 13（不含纯凭据）
+
+== 2. 与合并包“二、测试结果”的对照 ==
+   - “nginx: nginx -t 通过（含 ddos-mode 前置 server）”：无法复核——
+     nginx.conf / sites-enabled/ddos / ddos-mode.conf 的 include 关系均未交付。
+   - “Bash: 6 个文件 bash -n 全部通过”：本机无 bash，无法复核（不构成缺陷，仅说明）。
+   - “未包含任何密钥/Token/密码”：与源码一致（凭据全部来自 /root/.config/*），
+     但这些凭据文件的**权限**未交付、脚本也未检查（cf-set-a 用 mktemp 600 尚可，
+     ddos-monitor.py:29 直接 open 读取更宽松）。
+
+== 3. 结论 ==
+   “503 前置 server 与排除项”是本域最关键的审查对象，但它的实现文件不在包里；
+   因此本报告只能证明 ddos-mode.sh 生成的规则本身没有排除项（SH-07），
+   无法证明线上实际生效的配置与脚本一致 —— 这是明确标注的审查盲区，不是“已审查无问题”。
+
+VERDICT: REPRODUCED
+
+[exit code] 0

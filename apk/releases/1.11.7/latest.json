@@ -1,0 +1,8 @@
+{
+  "versionCode": 8,
+  "versionName": "1.11.7",
+  "url": "https://download.lzj2012.top/apk/LZJ-Chat-1.11.7-hardened.apk",
+  "sha256": "f1f000b57225be77fcabfe4e8c7f5ef622d7745abdbf8b5ba9e4fe357b2bb360",
+  "size": 92382,
+  "notes": "移除审批标签页，改为通知直达审批弹窗；保留消息与设置双栏；新增安全校验、权限说明与正式文案。"
+}

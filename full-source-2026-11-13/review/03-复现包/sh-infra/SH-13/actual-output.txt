@@ -1,0 +1,53 @@
+== 0. 源码事实（work/src 行号）==
+failover.sh:23: log() { printf "%s %s\n" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" >> "$LOG"; tail -n 800 "$LOG" > "$LOG.t" && mv "$LOG.t" "$LOG"; }
+failover.sh:25: say() { local p; p=$(cat "$STFILE" 2>/dev/null || echo ""); [ "$p" = "$1" ] || { log "$1"; echo "$1" > "$STFILE"; }; }
+failover.sh:71: exec 8>"$BASE/.lock"
+failover.sh:72: flock -n 8 || { echo "已有实例在运行, 跳过"; exit 0; }
+failover.sh:58: if [ "$ACTION" = "resume" ]; then
+failover.sh:59: rm -f "$HOLD"
+failover.sh:60: log "恢复自动模式 (手动保持已解除), 立即重新判定"
+failover.sh:62: fi
+failover.sh:65: rm -f "$BASE/mc-restart-giveup" "$BASE/mc-restart.log"
+failover.sh:67: echo "已解除 MC 看护的硬放弃 (MC 若未运行, 下一轮看护会尝试启动)"
+--- mc-watchdog.sh（无 flock）---
+mc-watchdog.sh:22: log() { printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" >> "$LOG_FILE"; tail -n 800 "$LOG_FILE" > "$LOG_FILE.t" && mv "$LOG_FILE.t" "$LOG_FILE"; }
+mc-watchdog.sh:31: if [ -f "$RLOG" ]; then awk -v cut=$((now - WINDOW)) '$1+0 >= cut' "$RLOG" > "$RLOG.t" 2>/dev/null && mv "$RLOG.t" "$RLOG"; fi
+mc-watchdog.sh:33: if [ -f "$RLOG" ]; then cnt=$(wc -l < "$RLOG" 2>/dev/null) || cnt=0; fi
+mc-watchdog.sh:39: if [ "$cnt" -ge "$MAXTRY" ]; then
+mc-watchdog.sh:48: if [ "$last" -gt 0 ] && [ $((now - last)) -lt "$COOLDOWN" ]; then
+mc-watchdog.sh:51: echo "$now" >> "$RLOG"
+mc-watchdog.sh:55: if systemctl start mc; then log "MC看护: 已发出 start mc"; else log "MC看护: start mc 返回非零 (下一轮视情况再试)"; fi
+
+[+] mc-watchdog.sh 内是否使用 flock：否
+[+] failover.sh 中 resume 分支（第58-69行）在 exec 8>lock（第71行）之前；
+    => 与另一实例并发时，HOLD/放弃文件可在无锁状态下被修改。
+
+== 1. log() 轮转丢行（真实文件 + 受控交错）==
+   交错后日志内容: ['A: 开始切换']
+   B 的行是否丢失: 是（缺陷成立）
+   有锁版本内容: ['A: 开始切换', 'B: 家里 MC 仍在运行, 拒绝切云']（B 的行保留）
+
+== 2. watchdog 无锁双实例：计数重复 + 双启动 ==
+   A 读阶段=PROCEED  B 读阶段=PROCEED  -> cnt=11 (>MAXTRY=10), starts=2
+   下一轮是否直接硬放弃: 是
+   => 读/写窗口重叠时：两次 start、计数 +2、10 次上限被突破（更早触发硬放弃）。
+
+== 3. state 文件非原子写 -> 空文件时进入错误分支 ==
+   state 内容='HOME' -> CUR='HOME' -> HOME 分支
+   state 内容='CLOUD' -> CUR='CLOUD' -> CLOUD 分支
+   state 内容=''     -> CUR=''     -> else(云端看护) 分支
+   (failover.sh:105 用 `cat state || echo HOME`；空文件 != 空输出，
+    所以 CUR='' 会走到第224行的 else -> 调 mc-watchdog 拉起云端 MC)
+
+== 4. 非原子写清单 ==
+   failover.sh:25  echo ... > laststatus（未用 tmp+mv）
+   failover.sh:113  echo ... > ip_changed_at（未用 tmp+mv）
+   failover.sh:116  echo ... > last_reported（未用 tmp+mv）
+   failover.sh:148  echo ... > state=CLOUD（未用 tmp+mv）
+   failover.sh:156  echo ... > state=HOME（未用 tmp+mv）
+   failover.sh:220  echo ... > state=CLOUD（未用 tmp+mv）
+   断电/被杀时可能留下空文件；state 与 last_reported 的空值会改变分支。
+
+VERDICT: REPRODUCED
+
+[exit code] 0

@@ -1,0 +1,6 @@
+name: McGate
+version: 0.4.3
+main: com.lzj.mcgate.McGate
+api-version: "26.2"
+author: lzj
+description: "进服准入闸门: 未验证/被抽查玩家冻结 + 聊天室认证链接解锁"

@@ -1,0 +1,18 @@
+[APK-06] POST_NOTIFICATIONS 只声明不请求：Android 13+ 审批通知静默失效
+复现级别: R2（静态可证；行为需真机 Android 13+ 验证，本机未执行）
+环境: Windows + Python 3.12 + xml.etree；无 Android SDK/模拟器
+检查对象: apk/src/AndroidManifest.xml, apk/src/java/top/lzj2012/toolbox/Notifier.java, apk/src/java/top/lzj2012/toolbox/WatchService.java
+PASS | 清单声明了 POST_NOTIFICATIONS  [AndroidManifest.xml:11]
+PASS | targetSdkVersion=34 → Android 13+ 必须运行时申请该权限  [AndroidManifest.xml:7]
+PASS | 全部 Java 源码中没有 requestPermissions 调用（8 个文件）
+PASS | 全部 Java 源码中没有引用 POST_NOTIFICATIONS（无 onRequestPermissionsResult 处理）
+PASS | showApproval 在 notify 之前因 enabled()==false 直接 return（通知静默丢失）  [Notifier.java:55]
+PASS | enabled() 用 areNotificationsEnabled()；Android 13+ 未授权时恒为 false  [Notifier.java:30]
+PASS | WatchService 在调用 showApproval 之前就把 id 标记为已通知 → 用户事后授权也不会补发  [WatchService.java:68-71]
+平台依据：Android 13(API 33)+ 新装应用通知默认关闭；未调用 requestPermissions 时，
+          areNotificationsEnabled()==false，notify() 的调用被前置 return 短路。
+真机验证（R3，未执行）：
+  adb shell pm revoke top.lzj2012.toolbox android.permission.POST_NOTIFICATIONS
+  adb shell dumpsys notification --noredact | findstr lzj2012   # 无审批通知
+  # APP 内“测试通知”按钮只会提示“系统通知被关闭，请到设置里允许”，无权限弹窗
+结论: 复现通过

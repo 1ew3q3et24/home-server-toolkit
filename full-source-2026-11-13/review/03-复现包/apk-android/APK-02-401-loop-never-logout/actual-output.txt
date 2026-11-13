@@ -1,0 +1,23 @@
+[APK-02] 401 处理失效：令牌吊销后永不登出，陷入无限轮询
+复现级别: R1（本地可执行的语义等价模型；纯逻辑推演，不联网）
+环境: Windows + Python 3.12；无 Android SDK/模拟器
+模型来源: apk/src/java/top/lzj2012/toolbox/WatchService.java:41-58, apk/src/java/top/lzj2012/toolbox/Api.java:102-125（逐行等价翻译）
+PASS | waitPoll 的异常被内层 catch 吞掉并直接转 SSE（WatchService.java:42-46）  [WatchService.java:43,45]
+PASS | 外层只有看到 status==401 才会登出/退出  [WatchService.java:51]
+PASS | waitSse 抛 ApiException 时未传 HTTP 状态码 → status 恒为 0  [Api.java:109]
+PASS | ApiException 只有带 int 的构造才写 status（默认 0）  [Api.java:30]
+PASS | 5 轮模拟内 401 分支从未触发（令牌吊销不会被感知）
+PASS | 同一时间窗仍继续发出无效请求  [5 轮共 15 次请求]
+模拟轨迹:
+  iter0: 外层捕获 status=0 msg=SSE 401
+  iter0: 未识别 401 → sleep(5000) 后继续
+  iter1: 外层捕获 status=0 msg=SSE 401
+  iter1: 未识别 401 → sleep(5000) 后继续
+  iter2: 外层捕获 status=0 msg=SSE 401
+  iter2: 未识别 401 → sleep(5000) 后继续
+  iter3: 外层捕获 status=0 msg=SSE 401
+  iter3: 未识别 401 → sleep(5000) 后继续
+  iter4: 外层捕获 status=0 msg=SSE 401
+  iter4: 未识别 401 → sleep(5000) 后继续
+结论: 复现通过
+影响: 服务端 reset 改密/设备吊销后(sessions_valid_after)，APP 继续每 ~5s~60s 轮询一次，不清理 Keystore 中的死令牌、不提示“登录已过期”，常驻前台服务持续耗电/耗流量。

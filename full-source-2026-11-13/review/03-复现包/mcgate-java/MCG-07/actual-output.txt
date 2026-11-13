@@ -1,0 +1,48 @@
+FINDING: MCG-07 ack 先于解锁应用 -> 验证结果丢失, 合法玩家被反复冻结踢出
+REPRO_LEVEL: R1
+
+== S1 玩家在任务执行前退出 ==
+   +0   异步线程: backend.pending() -> ['Steve']
+   +0   异步线程: runTask(解锁任务) 入主线程队列, due=2
+   +1   异步线程: backend.ack(['Steve']) 立即发出 (Gate.java:179)
+   +2   主线程: 解锁任务开始, getPlayerExact 逐个匹配
+   +2     Steve: 不在线/已退出 -> skip, 但 ack 已完成
+   +3   该玩家下次进服: backend.check() 无未提交码 -> 重新发码, 再次冻结
+   acked=['Steve'] unlocked=[] 解锁丢失=是
+
+== S2 解锁任务抛异常(白名单命令/玩家对象异常) ==
+   +0   异步线程: backend.pending() -> ['Steve']
+   +0   异步线程: runTask(解锁任务) 入主线程队列, due=2
+   +1   异步线程: backend.ack(['Steve']) 立即发出 (Gate.java:179)
+   +2   主线程: 解锁任务开始, getPlayerExact 逐个匹配
+   +2   主线程任务异常: dispatchCommand/whitelist 抛异常(示意) -> 后续目标未解锁(异常被调度器吞掉)
+   +3   该玩家下次进服: backend.check() 无未提交码 -> 重新发码, 再次冻结
+   acked=['Steve'] unlocked=[] 解锁丢失=是
+
+== S3 ack 后服务器重启, 任务丢失 ==
+   +0   异步线程: backend.pending() -> ['Steve']
+   +0   异步线程: runTask(解锁任务) 入主线程队列, due=2
+   +1   异步线程: backend.ack(['Steve']) 立即发出 (Gate.java:179)
+   +2   服务器在任务执行前崩溃/重启: 队列丢失
+   +3   该玩家下次进服: backend.check() 无未提交码 -> 重新发码, 再次冻结
+   acked=['Steve'] unlocked=[] 解锁丢失=是
+
+== S4 玩家全程在线(正常路径) ==
+   +0   异步线程: backend.pending() -> ['Steve']
+   +0   异步线程: runTask(解锁任务) 入主线程队列, due=2
+   +1   异步线程: backend.ack(['Steve']) 立即发出 (Gate.java:179)
+   +2   主线程: 解锁任务开始, getPlayerExact 逐个匹配
+   +2     Steve: unlock + whitelist add (成功)
+   +3   该玩家下次进服: backend.check() 无未提交码 -> 重新发码, 再次冻结
+   acked=['Steve'] unlocked=['Steve'] 解锁丢失=否
+
+== 结论 ==
+  * ack 与解锁不在同一个原子步骤里: ack 由异步线程无条件发出(Gate.java:179),
+    解锁依赖主线程任务成功执行(Gate.java:164-178)。任何失败路径都会造成
+    '后端认为已处理、客户端其实没解锁' => 玩家重进后被重新发码/再次冻结, 直到超时被踢。
+  * mc-api.php:92 的 pending 只返回 submitted_at IS NOT NULL AND acked=0 的行,
+    一旦被 ack 就不会再返回, 因此丢失不可自动恢复; 运维侧只能看到'玩家说验证了但没解锁'。
+  * 多台 MC 服务器共用一个后端时更明显: A 服 ack 掉的名字, B 服永远收不到。
+  丢失场景 = 3 / 4
+
+RESULT: VULNERABLE

@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>监控面板</title>
+<style>
+body{font-family:sans-serif;background:#f0f4f9;padding:20px;text-align:center;}
+.card{background:#fff;border-radius:16px;padding:20px;max-width:500px;margin:20px auto;box-shadow:0 4px 12px rgba(0,0,0,0.06);}
+h2{color:#1e2a3a;}
+.status{font-size:18px;margin:10px 0;}
+.running{color:#2e7d32;}
+.stopped{color:#c62828;}
+button{padding:10px 20px;margin:5px;border:none;border-radius:40px;font-size:16px;cursor:pointer;background:#2b6be0;color:#fff;}
+button:hover{background:#1a4fbf;}
+button.stop{background:#d32f2f;}
+button.stop:hover{background:#b71c1c;}
+</style>
+</head>
+<body>
+<h2>服务器监控</h2>
+<div class="card">
+    <p>CPU 使用率: <span id="cpu">--</span>%</p >
+    <p>内存: <span id="mem_used">--</span>GB / <span id="mem_total">--</span>GB (<span id="mem_percent">--</span>%)</p >
+</div>
+<div class="card">
+    <h3>Minecraft 服务器</h3>
+    <p class="status" id="mc_status">状态: 未知</p >
+    <button id="startBtn">▶ 启动</button>
+    <button id="stopBtn" class="stop">⏹ 停止</button>
+</div>
+<script>
+function updateStatus(){
+    fetch('/api/status')
+        .then(r=>r.json())
+        .then(data=>{
+            document.getElementById('cpu').textContent = data.cpu;
+            document.getElementById('mem_used').textContent = data.mem_used;
+            document.getElementById('mem_total').textContent = data.mem_total;
+            document.getElementById('mem_percent').textContent = data.memory;
+            const st = document.getElementById('mc_status');
+            if(data.mc_running){ st.textContent = '运行中'; st.className = 'status running'; }
+            else { st.textContent = '已停止'; st.className = 'status stopped'; }
+        });
+}
+function control(action){
+    fetch('/api/mc/' + action, {method:'POST'})
+        .then(()=>{ updateStatus(); });
+}
+document.getElementById('startBtn').onclick = ()=>control('start');
+document.getElementById('stopBtn').onclick = ()=>control('stop');
+updateStatus();
+setInterval(updateStatus, 3000);
+</script>
+</body>
+</html>

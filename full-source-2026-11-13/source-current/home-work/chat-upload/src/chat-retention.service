@@ -1,0 +1,7 @@
+[Unit]
+Description=聊天室数据清理 (30 天)
+After=mariadb.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/chat-retention.sh

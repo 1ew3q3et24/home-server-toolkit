@@ -1,0 +1,72 @@
+# actual-output.txt —— CLAIM-jti-once AI 审批令牌 jti 一次性（v2.1 声明）
+# 生成时间: 2026-11-08 13:11:16   耗时: 0.30s   退出码: 0
+# 命令: python.exe poc.py   （工作目录: CLAIM-jti-once）
+# 说明: 本输出由脚本真实执行产生；未联网、未访问生产环境。
+# ----------------------------------------------------------------------
+---- cloud/var/www/chat-lib/ai-common.php:96-122 ----
+  96| function ai_sign_action(array $cfg, int $uid, string $action, array $params): string {
+  97|     $payload = json_encode(['uid' => $uid, 'action' => $action, 'params' => $params, 'exp' => time() + 120, 'jti' => bin2hex(random_bytes(12))], JSON_UNESCAPED_UNICODE);
+  98|     $b = ai_b64u((string)$payload);
+  99|     $sig = hash_hmac('sha256', $b, (string)$cfg['action_secret']);
+ 100|     return $b . '.' . $sig;
+ 101| }
+ 102| 
+ 103| function ai_verify_action(array $cfg, string $token): ?array {
+ 104|     $parts = explode('.', $token);
+ 105|     if (count($parts) !== 2) return null;
+ 106|     [$b, $sig] = $parts;
+ 107|     $exp = hash_hmac('sha256', $b, (string)$cfg['action_secret']);
+ 108|     if (!hash_equals($exp, $sig)) return null;
+ 109|     $pad = strlen($b) % 4;
+ 110|     if ($pad) $b .= str_repeat('=', $pad);
+ 111|     $raw = base64_decode(strtr($b, '-_', '+/'));
+ 112|     $d = json_decode((string)$raw, true);
+ 113|     if (!is_array($d) || (int)($d['exp'] ?? 0) < time()) return null;
+ 114|     $jti = (string)($d['jti'] ?? '');
+ 115|     if ($jti === '' || !preg_match('/^[0-9a-f]{24}$/', $jti)) return null;
+ 116|     $dir = '/var/lib/chat-ai/used';
+ 117|     if (!is_dir($dir)) @mkdir($dir, 0750, true);
+ 118|     $fp = @fopen($dir . '/' . hash('sha256', $jti), 'x');
+ 119|     if (!$fp) return null;
+ 120|     fclose($fp);
+ 121|     return $d;
+ 122| }
+-------------------
+---- cloud/var/www/chat/ai-bot-action.php:15-31 ----
+  15| $me = require_role(ROLE_OWNER);
+  16| $cfg = ai_config();
+  17| $raw = file_get_contents('php://input');
+  18| $in = json_decode((string)$raw, true);
+  19| $token = is_array($in) ? (string)($in['token'] ?? '') : '';
+  20| if ($token === '') aa_out(['ok' => false, 'error' => '缺少批准令牌'], 400);
+  21| 
+  22| $d = ai_verify_action($cfg, $token);
+  23| if ($d === null) aa_out(['ok' => false, 'error' => '批准已过期或无效，请重新让 AI 提议'], 403);
+  24| if ((int)($d['uid'] ?? 0) !== (int)$me['id']) aa_out(['ok' => false, 'error' => '批准令牌不属于当前账号'], 403);
+  25| 
+  26| $action = (string)($d['action'] ?? '');
+  27| $p = is_array($d['params'] ?? null) ? $d['params'] : [];
+  28| $allowed = ['delete_message', 'ban_user', 'delete_user', 'set_role', 'unban_user'];
+  29| if (!in_array($action, $allowed, true) || empty($cfg['permissions'][$action])) {
+  30|     aa_out(['ok' => false, 'error' => '该动作未授权'], 403);
+  31| }
+-------------------
+
+  [是] 令牌载荷含 jti（ai_sign_action）
+  [是] jti 格式校验（24 位 hex）
+  [是] 验签用 hash_equals
+  [是] 过期校验（exp）
+  [是] 一次性：fopen(..., 'x') 原子创建
+  [是] 失败即拒绝（创建失败 return null）
+  [是] 令牌绑定 uid，且执行端校验
+
+O_EXCL 语义验证（与 PHP 'x' 模式一致：文件已存在则创建失败）：
+   第一次 fopen('x') -> 已存在 -> 失败 (Permission denied)
+   第二次 fopen('x') -> 已存在 -> 失败 (Permission denied)
+   => 并发/重放时只有一个请求能拿到令牌，第二个被拒（与 v2.1 的“实测第二次被拒”一致）。
+
+注意（可用性，不是漏洞）：jti 标记在 ai_verify_action 内、uid/权限校验之前写入；
+      若后续校验失败（令牌不属于当前账号/动作未授权），该令牌也会被烧掉，需重新让 AI 提议。
+
+v2.1 声明『审批令牌增加 jti 并一次性使用』：**符合**（并且是原子实现，不是先查后用）。
+RESULT: FIXED

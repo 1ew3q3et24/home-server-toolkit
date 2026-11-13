@@ -1,0 +1,38 @@
+FINDING: MCG-11 whitelist add 通过控制台命令字符串拼接执行
+REPRO_LEVEL: R2
+
+== 证据 ==
+  Gate.java:89   private void freeze(Player player, String code, String link, boolean needTos) {
+  Gate.java:92   f.name = player.getName();
+  Gate.java:93   f.loc = player.getLocation().clone();
+  Gate.java:97   frozen.put(player.getUniqueId(), f);
+  Gate.java:136  private void unlock(Player player, boolean tosOnly) {
+  Gate.java:142  if (!tosOnly && plugin.getConfig().getBoolean("gate.whitelist-add", true)) {
+  Gate.java:143  Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "whitelist add " + f.name);
+  Gate.java:144  }
+
+== 问题 ==
+  1. f.name 唯一来源是 player.getName(); 只要未来换成后端返回的名字(Backend.pending 的
+     name 字段会进入 Poll 逻辑, 且 mc-api 的 mc_name 只校验 strlen<=32)就会变成
+     '后端可控字符串 -> 控制台命令' 的注入面; 目前属于依赖上游不变量, 无防御。
+  2. 没有 Bukkit 白名单 API / UUID 写入: dispatchCommand 按名字解析, 在离线模式/改名场景
+     会写错对象; 命令失败时返回 false 但被忽略, 运维看不到失败。
+  3. 白名单语义冲突(config.yml:17 whitelist-add: true):
+     - 若服务端开启 whitelist: 未验证的新玩家在登录阶段就被白名单拒绝,
+       根本进不了 PlayerJoinEvent, 也就拿不到验证码 => 新玩家永远无法完成首次验证;
+     - 若服务端关闭 whitelist: 这条 whitelist add 是无效操作(死代码)。
+     两种情况都说明该开关没有正确设计, 需要运维明确取舍。
+  4. '一次验证 -> 永久白名单': 插件加载失败或后端长期不可用时, 白名单本身仍会放行已
+     验证过的玩家, 但抽查/TOS 复检随插件一起消失(见 MCG-08)。
+
+== 建议 ==
+  * 用 server.getWhitelist()/OfflinePlayer 或 Bukkit.getWhitelistedPlayers() 的 API 写入,
+    并在写入前用 Pattern.compile("^[A-Za-z0-9_]{3,16}$") 校验名字;
+  * dispatchCommand 的返回值必须判断并记日志;
+  * 明确 whitelist 与闸门的先后关系(要么闸门负责准入且不开 whitelist, 要么 whitelist
+    放行后由闸门做二次检查)。
+
+== 判定标准 ==
+  控制台命令拼接 + 无校验 + 忽略返回值 => 静态确认(R2); 实际利用需上游名字可控(R3/待确认)。
+
+RESULT: CONFIRMED

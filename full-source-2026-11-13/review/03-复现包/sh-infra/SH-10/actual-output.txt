@@ -1,0 +1,32 @@
+== 0. 源码事实（work/src 行号）==
+failover.sh:99: archive_cloud_world() {
+failover.sh:100: local ts; ts=$(date -u +%Y%m%d-%H%M%S)
+failover.sh:101: [ -d /data/mcserver/world ] && tar czf "/data/backups/failover-world-$ts.tar.gz" -C /data/mcserver world 2>/dev/null \
+failover.sh:102: && log "已存档云端世界: failover-world-$ts.tar.gz"
+failover.sh:103: }
+failover.sh:153: if systemctl is-active --quiet mc; then archive_cloud_world; systemctl stop mc; sleep 3; fi
+failover.sh:237: archive_cloud_world
+failover.sh:238: systemctl stop mc; sleep 3
+
+[+] 调用顺序：
+    force-home : 第153行 archive_cloud_world 在 systemctl stop mc **之前**
+    auto 切回  : 第237行 archive_cloud_world 在 第238行 systemctl stop mc **之前**
+    => 归档对象是“仍在被 MC 写入”的 world 目录。
+
+== 1. 其它缺陷（静态核对）==
+   tar 后是否校验归档完整性(tar tzf): 否
+   是否有保留/清理策略: 否（/data/backups 会无限增长）
+   tar 失败是否被吞: 是（`tar ... 2>/dev/null && log`，失败时无日志无告警）
+
+== 2. 可执行证明：一边写一边打包 ==
+   写入结束后 region 实际大小 = 321536 字节
+   归档里记录的 region 大小 = 280576 字节
+   归档是否小于实际（快照被截断）= 是
+
+   说明：MC 的 region 文件在 autosave/区块保存时是“先写新数据再更新头部”，
+   打包时若正好写到一半，恢复出来的世界会出现 chunk 损坏/回档。
+   正确做法：先 `systemctl stop mc`（或 rcon `save-off` + `save-all flush`）再 tar。
+
+VERDICT: REPRODUCED
+
+[exit code] 0

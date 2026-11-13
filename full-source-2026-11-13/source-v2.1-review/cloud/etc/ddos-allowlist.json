@@ -1,0 +1,15 @@
+{
+ "allow": [
+  "hbbs",
+  "hbbr",
+  "rustdesk",
+  "java",
+  "paper",
+  "minecraft",
+  "sshd",
+  "systemd",
+  "fail2ban-server",
+  "x11vnc",
+  "msedge"
+ ]
+}

@@ -1,0 +1,6 @@
+[Unit]
+Description=Send heartbeat to cloud (only when Minecraft is serving)
+
+[Service]
+Type=oneshot
+ExecStart=%h/heartbeat/send.sh

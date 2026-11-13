@@ -1,0 +1,20 @@
+[APK-05] 导出的 BootReceiver 无 action 校验：任意应用可显式触发（Android 12+ 崩溃 / 拉起常驻服务）
+复现级别: R2（清单+代码静态可证）；运行时验证需真机（R3），本机无 adb/模拟器未执行
+环境: Windows + Python 3.12 + xml.etree；无 Android SDK
+检查对象: apk/src/AndroidManifest.xml, apk/src/java/top/lzj2012/toolbox/BootReceiver.java
+PASS | 清单中找到 .BootReceiver  [AndroidManifest.xml:58]
+PASS | BootReceiver 显式 android:exported="true" → 可被任意应用显式 Intent 命中  [AndroidManifest.xml:58]
+PASS | BootReceiver 未设置 android:permission（无签名级权限门槛）
+PASS | intent-filter 只声明 BOOT_COMPLETED（但 exported=true 时显式 Intent 不受 filter 限制）  [AndroidManifest.xml:59-61]
+PASS | BootReceiver.onReceive 不校验 intent.getAction()  [BootReceiver.java:9-13]
+PASS | 无条件下调用 startForegroundService（仅以“本地是否有令牌”为条件）  [BootReceiver.java:12]
+PASS | 未捕获 ForegroundServiceStartNotAllowedException（Android 12+ 后台启动 FGS 会抛）  [BootReceiver.java:8-14]
+外部应用可复制执行的触发命令（R3，需真机安装 APP 且本机无 adb，未执行）：
+  adb shell am broadcast -n top.lzj2012.toolbox/.BootReceiver \
+      -a top.lzj2012.toolbox.EVIL --receiver-include-background   # 任意 action
+判定：logcat 出现 FATAL EXCEPTION + ForegroundServiceStartNotAllowedException（Android 12+）
+      或 dumpsys activity services 出现 top.lzj2012.toolbox/.WatchService（旧系统）
+平台依据：BOOT_COMPLETED 是 protected broadcast，由 SYSTEM_UID 投递；
+          ActivityManagerService.checkComponentPermission 对 SYSTEM_UID 直接放行，
+          故 exported=false 不影响系统广播，却可挡住外部显式 Intent。
+结论: 复现通过

@@ -1,0 +1,68 @@
+
+==============================================================================
+PY-05  管理面板登录无限流/无锁定（R1，离线）
+==============================================================================
+
+[1] 测试凭据: D:\Desktop\新建文件夹\work\repro\py-panels\_tmp\PY-05-25016-1\panel-auth.json（脚本本地生成，与生产无关）
+
+[2] 被审登录代码（原样）：
+ 363| @app.route("/login", methods=["GET", "POST"])
+ 364| def login():
+ 365|     a = load_auth()
+ 366|     if a is None:
+ 367|         return Response("密码文件不存在, 请先在 panel 创建密码", mimetype="text/plain")
+ 368|     err = ""
+ 369|     if request.method == "POST":
+ 370|         pw = request.form.get("pw", "")
+ 371|         if hmac.compare_digest(hash_pw(pw, a["salt"]), a["hash"]):
+ 372|             r = Response('<meta http-equiv=refresh content="0;url=/">登录成功</div>')
+ 373|             r.set_cookie(COOKIE, make_token(a), httponly=True, secure=True, samesite="Lax", max_age=SESSION_TTL)
+ 374|             return r
+ 375|         err = "密码不对"
+ 376|         time.sleep(1.5)
+ 377|     e = ("<p style=\"color:#f87171\">" + err + "</p>") if err else ""
+ 378|     page = ("<!doctype html><html lang=zh-CN><head><meta charset=utf-8>"
+ 379|             "<title>登录 · 系统日志</title><style>" + CSS + "</style></head><body>"
+ 380|             "<div style=\"max-width:360px;margin:80px auto\">"
+ 381|             "<h1 style=\"margin-bottom:18px\">系统日志 · 管理员登录</h1>" + e +
+ 382|             "<form method=post style=\"display:flex;gap:8px\">"
+ 383|             "<input type=password name=pw required autofocus style=\"flex:1;padding:11px;border-radius:8px;border:1px solid #30363d;background:#0d1117;color:#c9d1d9;font-size:14px\">"
+ 384|             "<button style=\"padding:11px 18px;border-radius:8px;border:0;background:#1f6feb;color:#fff;font-size:14px;cursor:pointer\">登录</button>"
+ 385|             "</form></div></body></html>")
+ 386|     r = Response(page, mimetype="text/html", status=(401 if err else 200))
+ 387|     r.headers["X-Robots-Tag"] = "noindex, nofollow"
+ 388|     return r
+
+[3] 连续 4 次错误口令：
+    第 1 次: HTTP 401，耗时 1.66s，返回头含 Retry-After=None，cookie 数=0
+    第 2 次: HTTP 401，耗时 1.65s，返回头含 Retry-After=None，cookie 数=0
+    第 3 次: HTTP 401，耗时 1.65s，返回头含 Retry-After=None，cookie 数=0
+    第 4 次: HTTP 401，耗时 1.67s，返回头含 Retry-After=None，cookie 数=0
+    平均单次耗时: 1.66s（其中固定 1.5s 来自 time.sleep）
+
+[4] 锁定检查：错误 4 次后立刻用正确口令登录
+    正确口令登录: HTTP 200，cookie 数=1 -> 账号未被锁定: True
+
+[5] app.py 中限流/锁定相关关键字出现次数：
+    429          0
+    Retry-After  0
+    rate_limit   0
+    ratelimit    0
+    lockout      0
+    attempts     0
+    fail_count   0
+    captcha      0
+    sleep        1
+
+[6] 爆破估算（R2，静态推理）：
+    单连接: 1.5s sleep + 约 0.06s pbkdf2 ≈ 0.64 次/秒
+    Flask 开发服务器 app.run 默认 threaded=True（app.py:427 未关闭），
+    攻击者开 N 条并发连接即可拿到约 0.64*N 次/秒，且永远没有 429/锁定。
+    登录成功一次即获 12 小时会话（SESSION_TTL，app.py:15）。
+
+[7] 失败尝试是否留痕：源码中 /login 分支没有任何日志写入调用（仅 time.sleep 与页面渲染）。
+  [OK]   每次错误登录固定被 sleep(1.5) 减速（唯一防护）
+  [OK]   除 sleep 外无任何限流/锁定/429/验证码 实现
+  [OK]   连续失败后账号不锁定，正确口令仍可登录（无限次猜测）
+
+RESULT: PASS  PY-05：登录接口可无限次爆破（并发绕过 1.5s 延迟）

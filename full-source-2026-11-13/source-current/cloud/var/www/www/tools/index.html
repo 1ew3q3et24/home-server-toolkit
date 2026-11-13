@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>在线工具箱 · 免费小工具集合</title>
+<meta name="description" content="免费在线小工具集合: 图片压缩、二维码、JSON、正则、哈希、时间戳、单位换算、颜色、文本处理等。纯浏览器本地运算, 不上传数据, 无广告。">
+<meta name="keywords" content="在线工具,工具箱,图片压缩,二维码生成,JSON格式化,正则测试,时间戳转换,在线小工具">
+<link rel="icon" href="/favicon.svg?v=4" type="image/svg+xml">
+<style>
+:root{--bg:#f0f4f9;--card:#fff;--ink:#1f2937;--mut:#6b7280;--line:#d7e0ea;--pri:#2563eb;
+  --ease:cubic-bezier(.22,1,.36,1);--spring:cubic-bezier(.34,1.56,.64,1);
+  --sh:0 1px 3px rgba(30,60,90,.06);--sh2:0 12px 30px rgba(30,60,90,.14)}
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:radial-gradient(1100px 500px at 50% -8%,#e8f0ff,var(--bg) 60%) no-repeat var(--bg);
+  color:var(--ink);font-family:"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",system-ui,sans-serif;min-height:100vh;padding:26px 18px 40px}
+.wrap{max-width:1020px;margin:0 auto}
+.top{display:flex;align-items:flex-end;gap:16px;flex-wrap:wrap;margin-bottom:18px}
+h1{font-size:1.9rem;letter-spacing:.5px}
+.sub{color:var(--mut);font-size:.9rem;margin-top:6px}
+.search{margin-left:auto;position:relative;min-width:230px}
+.search input{width:100%;padding:11px 14px 11px 38px;border:1px solid var(--line);border-radius:12px;background:#fff;font-size:15px;outline:none;transition:border-color .2s,box-shadow .2s}
+.search input:focus{border-color:var(--pri);box-shadow:0 0 0 4px rgba(37,99,235,.12)}
+.search:before{content:"🔍";position:absolute;left:12px;top:50%;transform:translateY(-50%);opacity:.55;font-size:14px}
+h2.sec{font-size:.82rem;color:var(--mut);font-weight:600;letter-spacing:.5px;margin:18px 2px 8px;text-transform:uppercase}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(168px,1fr));gap:12px}
+a.tool{display:block;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:15px 16px;text-decoration:none;color:var(--ink);
+  box-shadow:var(--sh);transition:transform .22s var(--ease),box-shadow .26s var(--ease),border-color .2s;position:relative;overflow:hidden}
+a.tool:hover{transform:translateY(-3px);box-shadow:var(--sh2);border-color:#bcd0ea}
+a.tool .ico{font-size:1.55rem;display:block;margin-bottom:8px;transition:transform .3s var(--spring)}
+a.tool:hover .ico{transform:scale(1.12) rotate(-4deg)}
+a.tool .nm{font-weight:650;font-size:.98rem}
+a.tool .ds{color:var(--mut);font-size:.78rem;margin-top:4px;line-height:1.45}
+.empty{color:var(--mut);font-size:.9rem;padding:26px 4px;text-align:center}
+.foot{text-align:center;color:#9ca3af;font-size:.76rem;margin-top:26px;line-height:1.7}
+.ovl{position:fixed;inset:0;background:rgba(17,24,39,.42);backdrop-filter:blur(5px);display:flex;align-items:center;justify-content:center;padding:16px;z-index:50;opacity:0;transition:opacity .22s var(--ease)}
+.ovl.in{opacity:1}.ovl.out{opacity:0}
+.panel{width:100%;max-width:680px;max-height:88vh;overflow:auto;background:#fff;border-radius:18px;padding:20px;box-shadow:0 24px 60px rgba(17,24,39,.28);
+  transform:translateY(14px) scale(.98);transition:transform .3s var(--spring)}
+.ovl.in .panel{transform:none}
+.ph{display:flex;align-items:center;gap:10px;margin-bottom:14px}
+.ph h3{font-size:1.12rem;flex:1}
+.x{cursor:pointer;border:none;background:#f3f6fb;color:#64748b;width:34px;height:34px;border-radius:10px;font-size:17px;transition:.2s}
+.x:hover{background:#e6eefb;color:var(--pri)}
+label.f{display:block;font-size:.82rem;color:#374151;margin:12px 0 6px}
+input.i,textarea.i,select.i{width:100%;font-family:inherit;font-size:14px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#f8fafc;outline:none;transition:.2s}
+input.i:focus,textarea.i:focus,select.i:focus{border-color:var(--pri);background:#fff;box-shadow:0 0 0 4px rgba(37,99,235,.1)}
+textarea.i{min-height:120px;resize:vertical;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px;line-height:1.55}
+.row{display:flex;gap:9px;flex-wrap:wrap;align-items:center;margin-top:12px}
+.btn{cursor:pointer;border:none;border-radius:11px;padding:10px 16px;font-weight:650;font-size:13.5px;color:#fff;
+  background:linear-gradient(180deg,#3b82f6,#2563eb);box-shadow:0 2px 6px rgba(37,99,235,.3),inset 0 1px 0 rgba(255,255,255,.28);
+  transition:transform .16s var(--ease),box-shadow .2s var(--ease)}
+.btn:hover{transform:translateY(-1.5px);box-shadow:0 8px 18px rgba(37,99,235,.32),inset 0 1px 0 rgba(255,255,255,.28)}
+.btn:active{transform:translateY(0) scale(.975)}
+.btn.gh{background:#fff;color:#374151;border:1px solid var(--line);box-shadow:var(--sh)}
+.btn.gh:hover{color:var(--pri);border-color:#bcd0ea}
+.btn:disabled{opacity:.5;cursor:not-allowed;transform:none}
+.out{margin-top:12px;background:#f8fafc;border:1px solid var(--line);border-radius:10px;padding:11px 13px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px;
+  white-space:pre-wrap;word-break:break-all;min-height:20px;animation:fade .28s var(--ease) both}
+@keyframes fade{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}}
+.ok{color:#15803d}.bad{color:#b91c1c}
+.mut{color:var(--mut);font-size:.78rem}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+@media(max-width:560px){.grid2{grid-template-columns:1fr}.search{margin-left:0;width:100%}}
+.kv{display:flex;gap:8px;align-items:center}
+canvas.prev{max-width:100%;border-radius:10px;border:1px solid var(--line);margin-top:10px;display:block}
+.sw{display:inline-block;width:44px;height:24px;border-radius:99px;background:#cbd5e1;position:relative;transition:.25s var(--ease);vertical-align:middle}
+.sw:after{content:"";position:absolute;top:2px;left:2px;width:20px;height:20px;border-radius:50%;background:#fff;transition:.25s var(--ease);box-shadow:0 1px 3px rgba(0,0,0,.2)}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <div>
+      <h1>🧰 在线工具箱</h1>
+      <div class="sub">免费小工具集合 · 全部在<b>你的浏览器里</b>运算, 数据不上传 · 无广告</div>
+    </div>
+    <div class="search"><input id="q" type="search" placeholder="搜索工具, 比如 二维码 / json / 压缩" autocomplete="off"></div>
+  </div>
+  <div id="recentWrap" style="display:none"><h2 class="sec">最近使用</h2><div class="grid" id="recent"></div></div>
+  <h2 class="sec" id="allTitle">全部工具 <span id="cnt" class="mut"></span></h2>
+  <div class="grid" id="grid"></div>
+  <div class="empty" id="nores" style="display:none">没有匹配的工具</div>
+  <p class="foot">公益项目 · 无广告 · 不收集任何数据 · 所有计算在本地浏览器完成<br>工具会持续增加, 欢迎收藏本页 (Ctrl+D)</p>
+</div>
+<div id="ovl" class="ovl" style="display:none"><div class="panel" id="panel"></div></div>
+<script src="qrcode.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

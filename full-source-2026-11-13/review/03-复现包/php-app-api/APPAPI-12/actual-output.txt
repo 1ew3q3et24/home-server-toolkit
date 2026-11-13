@@ -1,0 +1,27 @@
+# 本文件由本机真实运行生成：
+# 命令: C:\Users\18012\.dsh\dsh-runtimes\dsh-primary-runtime\dependencies\python\python.exe work\repro\php-app-api\APPAPI-12\poc.py
+# 退出码: 0
+# ------------------------------------------------------------
+== 1) 源码核对：日志泄露验证码前缀
+   chat_log 中出现 substr($code, 0, 4): True
+   日志行形如: [MC闸门] issue name=Steve bound=0 code=1234****
+   -> 完整验证码是 4+4 位（mc_new_code 只生成 [0-9]{4}-[0-9]{4}），日志泄露一半。
+
+== 2) 源码核对：审批接口无速率限制
+   submit       含 ip_bump: False；含 login_fail_ok: False
+   approve_link 含 ip_bump: False；含 login_fail_ok: False
+
+== 3) 组合后的枚举成本（仅用于说明纵深缺失，不是主漏洞）
+   已知 game_name（日志里也有）与验证码前 4 位时，剩余空间 = 10000 种。
+   若服务端无速率限制，  10 请求/秒 -> 穷尽约 16.7 分钟；
+   若服务端无速率限制， 100 请求/秒 -> 穷尽约 1.7 分钟；
+   若服务端无速率限制，1000 请求/秒 -> 穷尽约 0.2 分钟；
+   但实际上验证码 TTL=300 秒，且同一游戏名的 code 会被 check 续期，
+   真正的门槛是「能否读日志」（chat.log 属 www-data/root，logview 面板有鉴权）。
+
+== 4) 还有一个纯卫生问题：mc_new_code() 是死代码
+   mc_new_code 定义: True；调用点: 0
+   当前发码走的是链接（code 字段存 https URL），8 位数字码仅剩兼容旧数据；
+   日志仍按 8 位码格式截取，属于历史遗留逻辑，建议一并收敛。
+
+RESULT: PASS

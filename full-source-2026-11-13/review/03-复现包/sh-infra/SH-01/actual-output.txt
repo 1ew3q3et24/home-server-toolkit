@@ -1,0 +1,44 @@
+== 1. 交付源码里的算术上下文（行号取自 work/src）==
+failover.sh:26: hb_age() {
+failover.sh:27:   [ -f "$HB_FILE" ] || { echo none; return; }
+failover.sh:28:   local v now; v=$(cat "$HB_FILE" 2>/dev/null); [ -z "$v" ] && { echo none; return; }
+failover.sh:29:   [ "$v" = "0" ] && { echo bye; return; }
+failover.sh:30:   now=$(date +%s); echo $(( now - v ))
+failover.sh:31: }
+failover.sh:189:   [ -f "$BASE/ip_changed_at" ] && IPAGE=$(( $(date +%s) - $(cat "$BASE/ip_changed_at") ))
+failover.sh:195:   N=$(( $(cat "$CNTF" 2>/dev/null || echo 0) + 1 )); echo "$N" > "$CNTF"
+failover.sh:234:   else N=$(( $(cat "$CNTO" 2>/dev/null || echo 0) + 1 )); echo "$N" > "$CNTO"; log "端口可达但心跳未恢复 $N/$OK_THRESHOLD"; fi
+home-mc-alive.sh:9: if [ -f "$HB" ]; then
+home-mc-alive.sh:10:   v=$(cat "$HB" 2>/dev/null || echo "")
+home-mc-alive.sh:11:   if [ -n "$v" ] && [ "$v" != "0" ]; then
+home-mc-alive.sh:12:     now=$(date +%s)
+home-mc-alive.sh:13:     age=$(( now - v ))
+home-mc-alive.sh:14:     if [ "$age" -ge 0 ] && [ "$age" -lt "$HB_TIMEOUT" ]; then
+
+[+] failover.sh:28-30：v=$(cat 心跳文件) 之后直接 echo $(( now - v ))；
+    第 28 行只判空(-z)，第 29 行只判字符串 "0"，没有任何数字/长度校验。
+[+] 对比：home_ip 有 case "$ip" in ""|*[!0-9.]*) 字符集过滤；心跳没有。
+[+] home-mc-alive.sh:13 同样直接 age=$(( now - v ))。
+
+== 2. 等价模型：把文件内容送进 $(( ... )) 会发生什么 ==
+  正常心跳                         文件内容='1762499990'
+     -> 纯数字，正常算出 age
+  被篡改的心跳                       文件内容='x[$(touch /tmp/sh01_root_pwned)]'
+     -> 递归求值后将被执行的命令替换: ['touch /tmp/sh01_root_pwned']
+  换行 + 二次载荷                    文件内容='1$(id>/tmp/sh01_id)\n'
+     -> 递归求值后将被执行的命令替换: ['id>/tmp/sh01_id']
+
+  等价 shell 片段（行号对应源码；请勿在线上执行）：
+    v=$(cat /root/failover/heartbeat)
+    now=$(date +%s); echo $(( now - v ))   # failover.sh:30
+    age=$(( now - v ))                      # home-mc-alive.sh:13
+
+== 3. 其它同类汇聚点（同一模式）==
+  failover.sh:189  ip_changed_at 内容 -> $(( ... )) 无正则校验
+  failover.sh:195  CNTF 失败计数 -> $(( ... )) 无正则校验
+  failover.sh:234  CNTO 恢复计数 -> $(( ... )) 无正则校验
+  说明：这三个文件在 /root/failover 下，正常只有本脚本写；一旦有一条写入路径被污染（例如通过心跳同步脚本、备份恢复、面板写文件），同样可达。
+
+VERDICT: REPRODUCED
+
+[exit code] 0

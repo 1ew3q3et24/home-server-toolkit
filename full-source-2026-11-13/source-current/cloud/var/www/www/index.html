@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>我的空间</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{min-height:100vh;display:flex;justify-content:center;align-items:center;
+  font-family:"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif;
+  background:#f0f4f9;color:#1f2937;padding:22px}
+.wrap{max-width:720px;width:100%}
+h1{font-size:2.1rem;font-weight:700;letter-spacing:.5px}
+.sub{color:#6b7280;margin:6px 0 22px;font-size:.95rem}
+.card{background:#fff;border:1px solid #d7e0ea;border-radius:14px;padding:18px 20px;margin-bottom:16px;
+  box-shadow:0 1px 3px rgba(30,60,90,.06)}
+.stline{display:flex;align-items:center;gap:10px;font-size:1.15rem;font-weight:600}
+.dot{width:11px;height:11px;border-radius:50%;background:#9ca3af;flex:0 0 auto}
+.ok .dot{background:#16a34a;box-shadow:0 0 0 4px rgba(22,163,74,.14)}
+.ok{color:#15803d}.cloud .dot{background:#ea580c;box-shadow:0 0 0 4px rgba(234,88,12,.14)}
+.cloud{color:#c2410c}.err .dot{background:#dc2626}.err{color:#b91c1c}
+.muted{color:#6b7280;font-size:.84rem;margin-top:8px}
+.links{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.links a{display:block;background:#fff;border:1px solid #d7e0ea;border-radius:12px;
+  padding:14px 16px;text-decoration:none;color:#1f2937;font-size:.95rem;font-weight:500;
+  transition:.15s;box-shadow:0 1px 3px rgba(30,60,90,.06)}
+.links a:hover{border-color:#2563eb;color:#2563eb;transform:translateY(-1px);
+  box-shadow:0 4px 12px rgba(37,99,235,.12)}
+.foot{text-align:center;color:#9ca3af;font-size:.78rem;margin-top:20px}
+.lock{position:fixed;top:14px;right:16px;font-size:15px;text-decoration:none;opacity:.22}
+.lock:hover{opacity:.85}
+</style>
+<link rel="icon" href='/favicon.svg?v=4' type="image/svg+xml"><link rel="alternate icon" href='/favicon.png?v=4'><link rel="apple-touch-icon" href='/favicon.png?v=4'></head>
+<body>
+<a href="https://panel.lzj2012.top/login" class="lock" title="管理入口">🔒</a>
+<div class="wrap">
+  <h1>我的空间</h1>
+  <p class="sub">Minecraft 服务器 · 个人空间</p>
+
+  <div class="card" id="status">
+    <div class="stline"><span class="dot"></span><span id="stxt">正在读取服务器状态…</span></div>
+    <p class="muted" id="shint"></p>
+  </div>
+
+  <div class="links">
+    <a href="/tools/">🧰　在线工具箱</a>
+    <a href="https://blog.lzj2012.top">📝　博客</a>
+    <a href="https://chat.lzj2012.top">💬　聊天室</a>
+    <a href="https://game.lzj2012.top">🎮　小游戏</a>
+    <a href="https://panel.lzj2012.top">🖥　服务器控制台</a>
+    <a href="https://logs.lzj2012.top">📋　系统日志</a>
+  </div>
+
+  <p class="foot">Minecraft 服务器</p>
+</div>
+<script>
+function up(){
+  fetch("/api/status",{cache:"no-store"}).then(function(r){return r.json()}).then(function(d){
+    var box=document.getElementById("status"), t=document.getElementById("stxt"), h=document.getElementById("shint");
+    if(d.state==="HOME"){box.className="card ok";t.textContent="服务器在家里运行";
+      h.textContent="一切正常，玩家连接的是家里的服务器。"}
+    else if(d.state==="CLOUD"){box.className="card cloud";t.textContent="云端正在接管";
+      h.textContent="家里暂时不可用，玩家正在云端游玩，恢复后会自动切回。"}
+    else {box.className="card err";t.textContent="状态未知";h.textContent="";}
+  }).catch(function(e){
+    document.getElementById("stxt").textContent="状态读取失败";
+  });
+}
+up();setInterval(up,10000);
+</script>
+</body>
+</html>

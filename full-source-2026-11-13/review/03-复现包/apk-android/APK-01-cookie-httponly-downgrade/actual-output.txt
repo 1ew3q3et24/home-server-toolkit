@@ -1,0 +1,15 @@
+[APK-01] WebView 会话 Cookie 降级：HttpOnly 丢失 + 第三方 Cookie 开启 + 自动换取 90 天设备令牌
+复现级别: R2（静态可证；运行时验证需真机/WebView，本机未执行）
+环境: Windows + Python 3.12；无 Android SDK/模拟器/adb，不向任何真实主机发请求
+检查对象: apk/src/java/top/lzj2012/toolbox/MainActivity.java, cloud/var/www/chat-lib/lib.php, cloud/var/www/chat/app-api.php
+PASS | 服务端登录 Cookie 原本是 HttpOnly（lib.php set_session/setcookie）  [cloud/var/www/chat-lib/lib.php:112]
+PASS | app_web_login 返回的 cookie 串是裸值，不含 HttpOnly/Secure/SameSite 属性  [cloud/var/www/chat/app-api.php:237]
+PASS | APP 调用 setCookie(CHAT, cookie) 原样写入，未补 HttpOnly/Secure/SameSite  [apk/src/java/top/lzj2012/toolbox/MainActivity.java:243]
+PASS | MainActivity 全文没有出现 httponly 属性补写逻辑（无补救）
+PASS | APP 从不清理 CookieJar（登出后 chq 仍在，见 APK-03）
+PASS | APP 显式开启第三方 Cookie（扩大会话凭据暴露面）  [apk/src/java/top/lzj2012/toolbox/MainActivity.java:145]
+PASS | 推演：写入后的 chq 不带 HttpOnly → WebView 内 document.cookie 可读取
+PASS | 推演：Secure/SameSite 也未显式设置（依赖 Chromium 默认 Lax，Secure 不强制）
+PASS | 被盗 chq 可直接换 90 天设备令牌（app_token_from_cookie → trusted_devices 90 天）  [cloud/var/www/chat/app-api.php:240 / cloud/var/www/chat/app-api.php:75 / apk/src/java/top/lzj2012/toolbox/MainActivity.java:225]
+结论: 复现通过
+说明: 攻击链 = 站内任意脚本注入(或第三方脚本被篡改) → 读 document.cookie 得 chq → POST app-api.php?action=app_token_from_cookie → 90 天设备令牌（可读聊天、审批进服）

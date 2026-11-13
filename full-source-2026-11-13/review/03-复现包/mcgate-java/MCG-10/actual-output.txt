@@ -1,0 +1,41 @@
+FINDING: MCG-10 config.yml 死配置/死字段
+REPRO_LEVEL: R1
+
+== config.yml 中的配置项 -> 是否被读取 ==
+  backend                      !! 未被任何 Java 代码读取
+  backend.base-url             已读取
+  backend.secret               已读取
+  backend.timeout-ms           已读取
+  backend.fail-open            已读取
+  gate                         !! 未被任何 Java 代码读取
+  gate.random-check-rate       !! 未被任何 Java 代码读取
+  gate.timeout-seconds         已读取
+  gate.whitelist-add           已读取
+  gate.message                 已读取
+  gate.title                   已读取
+  gate.subtitle                已读取
+  gate.kick-reason             !! 未被任何 Java 代码读取
+  gate.tos-message             已读取
+  gate.tos-title               已读取
+  gate.tos-subtitle            已读取
+  gate.tos-kick-reason         !! 未被任何 Java 代码读取
+
+== 反向: Java 读取但 config.yml 未提供的键 ==
+
+== CheckResult.expiresIn ==
+  Backend.java 赋值: True (line 62, 默认值 133)
+  Gate.java 读取: False
+  => 后端给的验证码 TTL 从未用于冻结超时; 实际超时取 gate.timeout-seconds(300),
+     与后端 mc_timeout() 可能不一致(前端等待时长/踢出时机与码有效期脱钩)。
+
+== 影响 ==
+  * gate.random-check-rate: 运维以为改它能调抽查比例, 实际完全不生效;
+    抽查率只由数据库 settings.mc_check_rate 决定(mc-api.php:25-29), 默认 0.15。
+    '我把抽查改成 1.0 就全员复核' 是错的 => 部署方基于错误认知做安全决策。
+  * 其余死键同理; expiresIn 死字段造成前后端 TTL 语义不一致。
+
+== 判定标准 ==
+  死键/死字段集合非空 => 配置面存在误导(静态确认, R1)。
+
+死配置=['backend', 'gate', 'gate.random-check-rate', 'gate.kick-reason', 'gate.tos-kick-reason']
+RESULT: CONFIRMED

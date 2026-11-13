@@ -1,0 +1,77 @@
+== 0. 源码事实（work/src 行号）==
+home-mc-alive.sh:7: alive=0
+home-mc-alive.sh:8: why=""
+home-mc-alive.sh:9: if [ -f "$HB" ]; then
+home-mc-alive.sh:10:   v=$(cat "$HB" 2>/dev/null || echo "")
+home-mc-alive.sh:11:   if [ -n "$v" ] && [ "$v" != "0" ]; then
+home-mc-alive.sh:12:     now=$(date +%s)
+home-mc-alive.sh:13:     age=$(( now - v ))
+home-mc-alive.sh:14:     if [ "$age" -ge 0 ] && [ "$age" -lt "$HB_TIMEOUT" ]; then
+home-mc-alive.sh:15:       alive=1
+home-mc-alive.sh:16:       why="heartbeat $age seconds"
+home-mc-alive.sh:17:     fi
+home-mc-alive.sh:18:   fi
+home-mc-alive.sh:19: fi
+home-mc-alive.sh:20: ip=$(cat /root/failover/home_ip 2>/dev/null || echo "")
+home-mc-alive.sh:21: case "$ip" in ""|*[!0-9.]*) ip="";; esac
+home-mc-alive.sh:22: if [ -n "$ip" ]; then
+home-mc-alive.sh:23:   if timeout 5 bash -c "</dev/tcp/$ip/25565" 2>/dev/null; then
+home-mc-alive.sh:24:     alive=1
+home-mc-alive.sh:25:     why="$why port25565-open"
+home-mc-alive.sh:26:   fi
+home-mc-alive.sh:27: fi
+home-mc-alive.sh:28: echo "$alive ${why:-none}"
+--- failover.sh 防双写检查与切换 ---
+failover.sh:206:   log "失联 $N/$TH: $NOTE 且外网不可达"
+failover.sh:207:   [ "$N" -ge "$TH" ] || exit 0
+failover.sh:208:   alive_out=$(/usr/local/sbin/home-mc-alive.sh 2>>"$LOG") || { log "ERROR 防双写检查执行失败, 拒绝切云"; exit 4; }
+failover.sh:209:   case "$alive_out" in
+failover.sh:210:     "1 "*) log "家里 MC 仍在运行, 拒绝切云以免双写"; echo 0 > "$CNTF"; exit 0;;
+failover.sh:211:     "0 "*) :;;
+failover.sh:212:     *) log "ERROR 防双写检查输出异常: $alive_out"; exit 4;;
+failover.sh:213:   esac
+failover.sh:214:   log "=== 开始切换: 家里 -> 云端 ==="
+failover.sh:215:   prep_mc_memory
+failover.sh:216:   touch "$BASE/.mc-start-ok"
+failover.sh:217:   systemctl start mc || log "WARN mc 启动返回非零"
+failover.sh:218:   wait_for_port || die "云端 MC 起不来, 放弃切换"
+
+[+] home-mc-alive.sh 的输出只有 '1 ...' 和 '0 ...' 两种；
+    failover.sh:210 把 '1 ' 解释为“仍在运行”，:211 把 '0 ' 解释为“已停止”，
+    没有第三种“证据不足”的可能。
+
+== 1. 证据矩阵：家里 MC 实际在跑时，有哪些组合会被判成“已停” ==
+   HB     端口       MC实际     home-mc-alive  failover 决策                        结论
+   True   True     True     1 heartbeat 5s port25565-open 169-177 健康                         
+   True   True     False    1 heartbeat 5s port25565-open 169-177 健康                         
+   True   False    True     1 heartbeat 5s 199-205 心跳新鲜但外网不可达 -> 拒绝切云         
+   True   False    False    1 heartbeat 5s 199-205 心跳新鲜但外网不可达 -> 拒绝切云         
+   False  True     True     1 port25565-open 178-185 心跳异常但可达                    
+   False  True     False    1 port25565-open 178-185 心跳异常但可达                    
+   False  False    True     0 none         214-223 防双写检查说家里已停 -> 切云           <== 危险：家里 MC 在写世界却切云 = 双写
+   False  False    False    0 none         214-223 防双写检查说家里已停 -> 切云           
+
+   [判定] 会双写的组合数: 1
+
+== 2. 三个真实场景都落在这个组合上 ==
+   - 家庭出口断网（ISP 故障）：心跳写不出去 -> 过期；外网 25565 不可达；家里 MC 仍在局域网内运行并写盘
+     hb=False port=False -> home-mc-alive='0 none' -> 214-223 防双写检查说家里已停 -> 切云 -> 切云=True
+   - 家庭侧心跳写入端先坏（cron/ssh 断）+ 端口映射同时失效（CGNAT 换了映射）：MC 本身还活着
+     hb=False port=False -> home-mc-alive='0 none' -> 214-223 防双写检查说家里已停 -> 切云 -> 切云=True
+   - 对照：家里真的关机了（同样 hb/端口都断，但 MC 确实没在跑）
+     hb=False port=False -> home-mc-alive='0 none' -> 214-223 防双写检查说家里已停 -> 切云 -> 切云=True
+
+   关键：前两个场景与“家里真的关机”在云端看来**完全一样**（都是 0 none），
+   脚本没有任何手段区分，二者都执行切换。
+   项目在 failover.sh:200-201 承认“CGNAT/端口映射失效”会命中
+   ‘心跳新鲜但外网不可达’分支；但一旦心跳也过期（写入端先坏/断网），
+   就落到本条的 fail-open 路径。
+
+== 3. 结论 ==
+   “无法判定是否还活着”被折叠成“已停”，而切换后的恢复路径
+   (failover.sh:236-241) 又会停掉云端 MC 并把 DNS 切回家里，
+   两份世界在此期间各自被写入且无合并机制。
+
+VERDICT: REPRODUCED
+
+[exit code] 0

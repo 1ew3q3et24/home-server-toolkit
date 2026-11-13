@@ -1,0 +1,32 @@
+# 本文件由本机真实运行生成：
+# 命令: C:\Users\18012\.dsh\dsh-runtimes\dsh-primary-runtime\dependencies\python\python.exe work\repro\php-app-api\APPAPI-05\poc.py
+# 退出码: 0
+# ------------------------------------------------------------
+---- 情形 B：mc_bindings 无 UNIQUE(mc_name)
+   A(uid=11) SELECT pending -> (1, 'Herobrine'); 绑定查询 -> None
+   B(uid=22) SELECT pending -> (1, 'Herobrine'); 绑定查询 -> None
+   请求 uid=11 -> 200 ok 已批准
+   请求 uid=22 -> 200 ok 已批准
+   mc_bindings 行 => [(11,), (22,)]（应为 1 行）
+   mc_codes.user_id => 22（最后写入 mc_codes 的请求）
+   闸门 check() 用 LIMIT 1 取到的绑定账号 => 11（该账号的 tos/ban 状态将决定是否放行）
+
+---- 情形 A：mc_bindings 有 UNIQUE(mc_name)
+   A(uid=11) SELECT pending -> (1, 'Herobrine'); 绑定查询 -> None
+   B(uid=22) SELECT pending -> (1, 'Herobrine'); 绑定查询 -> None
+   请求 uid=11 -> 200 ok 已批准
+   请求 uid=22 -> 500 服务器错误（IntegrityError）
+   mc_bindings 行 => [(11,)]（应为 1 行）
+   mc_codes.user_id => 11（最后写入 mc_codes 的请求）
+   闸门 check() 用 LIMIT 1 取到的绑定账号 => 11（该账号的 tos/ban 状态将决定是否放行）
+
+== 源码核对
+   mc-api approve_link 的 UPDATE 无 submitted_at 条件: True
+   app-api mc_approve 的 UPDATE 无 submitted_at 条件: True
+   两个文件都没有事务包裹: True
+   绑定写入是裸 INSERT（非 INSERT IGNORE / ON DUPLICATE）: True
+
+结论：所谓「一次性」只靠 UPDATE 前的 SELECT 过滤，两个并发请求都能通过；
+      无唯一约束时产生同一 MC 名的双绑定；有唯一约束时第二个请求直接 500（并发冲突未优雅处理）；
+      闸门用 LIMIT 1 取绑定，可能读到错误账号的 tos/ban 状态。
+RESULT: PASS

@@ -1,0 +1,36 @@
+FINDING: MCG-06 先退出后判定 -> 冻结残留 + 无踢出任务 -> 等待超时后免验证
+REPRO_LEVEL: R1 (状态机; 端到端 R3)
+假设 A1: kickPlayer(旧 Player 对象) 不影响同名新会话的连接
+
+== 时间线 (ms, 仅用于排序) ==
+        0  PlayerJoinEvent 会话#1 (Gate.java:75)
+       50  onQuit: frozen 中无该 UUID(判定尚未返回) -> 只清空连接
+      120  backend.check() 返回 needVerify=true, code=ABCD-1234
+      120  freeze: frozen.put(uuid) (Gate.java:97), player 会话#1
+      120  freeze: setInvulnerable(true)/sendTitle/sendMessage (Gate.java:98-108)
+     2000  PlayerJoinEvent 会话#2 (Gate.java:75)
+     2120  backend.check() 再次返回, runTask -> freeze(player#2)
+     2120  freeze(player) 早退: frozen 已有该 UUID (Gate.java:90) -> 不发提示/不建 kickTask
+     2120  => 会话#2 处于冻结态, 但没有任何属于会话#2 的 kickTask/remindTask
+   300120  kickTask(旧会话) 触发: frozen.containsKey=true -> frozen.remove (Gate.java:112)
+   300121  kickTask: player.kickPlayer() 作用于旧 Player 对象(会话#1, 连接早已关闭)
+   300122  => 会话#2 的连接不受影响; 会话#2 仍在游戏中, 且 frozen 已空
+   300123  后续: onMove/onChat/动作拦截全部失效 (isFrozen=false)
+
+== 最终状态 ==
+  会话#2 在线: True
+  frozen 中仍有该 UUID: False
+  是否完成过验证: False
+  => 闸门绕过: 是
+
+== 代价与窗口 ==
+  * 触发条件: 玩家必须在 backend.check() 返回之前(通常 20ms~2s)断开, 再重连。
+    客户端宏/快速断线即可; 后端越慢(见 MCG-04)越容易。
+  * 冻结等待时长 = gate.timeout-seconds 默认 300s(config.yml:14), 期间动作被拦但没有
+    '会话#2 专属'的踢出任务, 到点后旧任务只会删条目/踢旧连接。
+  * 若假设 A1 不成立(服务端按 UUID 踢人), 结果退化为'合法玩家被误踢'(DoS), 仍属缺陷。
+
+== 判定标准 ==
+  输出 '闸门绕过: 是' => 漏洞成立(状态机层面); 真机确认 kick 语义后转为确认。
+
+RESULT: VULNERABLE

@@ -1,0 +1,67 @@
+=== 根因 1：client_ip() 只认 REMOTE_ADDR (lib.php:45-52) ===
+  45| function client_ip(): string {
+  46| // 只信 nginx 经 fastcgi_params 传入的真实 TCP 对端 (REMOTE_ADDR)。
+  47| // 绝不读 X-Real-IP / X-Forwarded-For: 那是客户端可伪造的头,
+  48| // 曾导致全部基于 IP 的限流 (注册/验证码/登录/上传) 被绕过。
+  49| $ip = $_SERVER['REMOTE_ADDR'] ?? '';
+  50| if (is_string($ip) && filter_var($ip, FILTER_VALIDATE_IP) !== false) return $ip;
+  51| return '0.0.0.0';
+  52| }
+
+=== 根因 2：mcverify 以服务器身份 curl 上游 (mcverify/index.php:15-30) ===
+  15| function upstream(string $act, array $data): array {
+  16| global $CHAT;
+  17| $ch = curl_init($CHAT . '?action=' . urlencode($act));
+  18| curl_setopt_array($ch, [
+  19| CURLOPT_POST => true,
+  20| CURLOPT_POSTFIELDS => http_build_query($data),
+  21| CURLOPT_RETURNTRANSFER => true,
+  22| CURLOPT_TIMEOUT => 25,
+  23| CURLOPT_USERAGENT => 'mcverify/1.0',
+  24| ]);
+  25| $out = curl_exec($ch);
+  26| curl_close($ch);
+
+=== 被影响的 chat 侧限流点 (api.php) ===
+  84| if (!ip_bump('register', IP_REGISTER_DAY)) { $pdo->rollBack(); fail('今天该 IP 注册次数过多, 请明天再试', 429); }   <-- register: IP_REGISTER_DAY=5/天
+ 116| if (ip_bump('sendcode_hit', 60) === false) fail('请求太频繁', 429);   <-- sendcode: sendcode_hit 60/分
+ 122| try { issue_code($email, 'register'); }   <-- issue_code -> ip_bump('sendcode', 10/天)
+ 131| if (ip_bump('verify', 60) === false) fail('尝试次数过多, 请稍后再试', 429);   <-- verify: verify 60/分
+ 180| if (ip_bump('login', 60) === false) fail('尝试次数过多, 请稍后再试', 429);   <-- login: login 60/分
+ 272| if (!ip_bump('upload', UPLOAD_IP_DAY)) { @unlink($tmp); fail('今天上传次数已达上限, 请明天再试', 429); }   <-- upload: 100/天
+
+=== 模拟：单个攻击者经 mcverify 打 sendcode，耗尽全站当日配额 ===
+  攻击者账号 v@example.com 为“已注册未验证”状态，满足 issue_code 前置
+  [攻击者] 第  1 次 sendcode（间隔 >=60s 绕开同邮箱冷却）-> ip_actions.n= 1, 允许=True
+  [攻击者] 第  2 次 sendcode（间隔 >=60s 绕开同邮箱冷却）-> ip_actions.n= 2, 允许=True
+  [攻击者] 第  3 次 sendcode（间隔 >=60s 绕开同邮箱冷却）-> ip_actions.n= 3, 允许=True
+  [攻击者] 第  4 次 sendcode（间隔 >=60s 绕开同邮箱冷却）-> ip_actions.n= 4, 允许=True
+  [攻击者] 第  5 次 sendcode（间隔 >=60s 绕开同邮箱冷却）-> ip_actions.n= 5, 允许=True
+  [攻击者] 第  6 次 sendcode（间隔 >=60s 绕开同邮箱冷却）-> ip_actions.n= 6, 允许=True
+  [攻击者] 第  7 次 sendcode（间隔 >=60s 绕开同邮箱冷却）-> ip_actions.n= 7, 允许=True
+  [攻击者] 第  8 次 sendcode（间隔 >=60s 绕开同邮箱冷却）-> ip_actions.n= 8, 允许=True
+  [攻击者] 第  9 次 sendcode（间隔 >=60s 绕开同邮箱冷却）-> ip_actions.n= 9, 允许=True
+  [攻击者] 第 10 次 sendcode（间隔 >=60s 绕开同邮箱冷却）-> ip_actions.n=10, 允许=True
+  [攻击者] 第 11 次 sendcode（间隔 >=60s 绕开同邮箱冷却）-> ip_actions.n=11, 允许=False
+  [攻击者] 第 12 次 sendcode（间隔 >=60s 绕开同邮箱冷却）-> ip_actions.n=12, 允许=False
+
+  此时任何真实用户 mcverify 注册后请求验证码：
+  [用户A] sendcode -> n=13, 允许=False -> 429 '今天该 IP 发验证码次数已达上限'
+  [用户B] sendcode -> n=14, 允许=False -> 429 '今天该 IP 发验证码次数已达上限'
+  [用户C] sendcode -> n=15, 允许=False -> 429 '今天该 IP 发验证码次数已达上限'
+
+=== 模拟：register 配额同样被 5 次注册占满 ===
+  [攻击者] 第 1 次 register -> n=1, 允许=True
+  [攻击者] 第 2 次 register -> n=2, 允许=True
+  [攻击者] 第 3 次 register -> n=3, 允许=True
+  [攻击者] 第 4 次 register -> n=4, 允许=True
+  [攻击者] 第 5 次 register -> n=5, 允许=True
+  [攻击者] 第 6 次 register -> n=6, 允许=False
+  [真实用户] register -> n=7, 允许=False -> 全站当日无法再注册
+
+=== 附带影响：审计/封禁归因失真 ===
+  chat_log('注册', ... ip='+client_ip()) 记录的是 203.0.113.10，
+  无法区分 mcverify 的真实用户；封禁/限流若基于 IP 会误伤全站。
+
+判定: mcverify 全部上游请求共用服务器 IP -> 单 IP 每天 10 条/5 个注册的全站配额可被一人耗尽。
+RESULT: 复现通过

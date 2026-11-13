@@ -1,0 +1,416 @@
+[
+ {
+  "file": "apk/build.sh",
+  "bytes_declared": 2015,
+  "bytes_extracted": 2015,
+  "sha256_declared": "86c0e36f1b9efb5bac85f29bac93050c3b94507b04f841a0659ff54bab7dc7ca",
+  "sha256_extracted": "86c0e36f1b9efb5bac85f29bac93050c3b94507b04f841a0659ff54bab7dc7ca",
+  "status": "OK",
+  "opener": "````bash"
+ },
+ {
+  "file": "apk/src/AndroidManifest.xml",
+  "bytes_declared": 2768,
+  "bytes_extracted": 2768,
+  "sha256_declared": "bfb4b45edfedb01a02ce1d3c87a8f25c74e972c9139ed2d2dfcec263de782cbb",
+  "sha256_extracted": "bfb4b45edfedb01a02ce1d3c87a8f25c74e972c9139ed2d2dfcec263de782cbb",
+  "status": "OK",
+  "opener": "````xml"
+ },
+ {
+  "file": "apk/src/java/top/lzj2012/toolbox/ActionReceiver.java",
+  "bytes_declared": 1101,
+  "bytes_extracted": 1101,
+  "sha256_declared": "5345d4f90f53f79d186a64ceec0d13d3fda5d4a8b9c4bd73a7f081c39d51c5c1",
+  "sha256_extracted": "5345d4f90f53f79d186a64ceec0d13d3fda5d4a8b9c4bd73a7f081c39d51c5c1",
+  "status": "OK",
+  "opener": "````java"
+ },
+ {
+  "file": "apk/src/java/top/lzj2012/toolbox/Api.java",
+  "bytes_declared": 6018,
+  "bytes_extracted": 6018,
+  "sha256_declared": "3c8459ef8e5e84448fcab939392f083b368692e2733205725a471dc238801b7d",
+  "sha256_extracted": "3c8459ef8e5e84448fcab939392f083b368692e2733205725a471dc238801b7d",
+  "status": "OK",
+  "opener": "````java"
+ },
+ {
+  "file": "apk/src/java/top/lzj2012/toolbox/ApprovalPanel.java",
+  "bytes_declared": 11242,
+  "bytes_extracted": 11242,
+  "sha256_declared": "5b86a174d1a60a67530110b5cb4f184c6ff884662be7da6e98e1334b5d40ba60",
+  "sha256_extracted": "5b86a174d1a60a67530110b5cb4f184c6ff884662be7da6e98e1334b5d40ba60",
+  "status": "OK",
+  "opener": "````java"
+ },
+ {
+  "file": "apk/src/java/top/lzj2012/toolbox/BootReceiver.java",
+  "bytes_declared": 476,
+  "bytes_extracted": 476,
+  "sha256_declared": "5460d2e6968707410a6c0a1717c6197b41ea64755493821b2ca46afca24cf4f7",
+  "sha256_extracted": "5460d2e6968707410a6c0a1717c6197b41ea64755493821b2ca46afca24cf4f7",
+  "status": "OK",
+  "opener": "````java"
+ },
+ {
+  "file": "apk/src/java/top/lzj2012/toolbox/MainActivity.java",
+  "bytes_declared": 11155,
+  "bytes_extracted": 11155,
+  "sha256_declared": "706ef870c8a65e8b570fdc541704a3fabb076c01f64b2b17130fa5c8ffc888f9",
+  "sha256_extracted": "706ef870c8a65e8b570fdc541704a3fabb076c01f64b2b17130fa5c8ffc888f9",
+  "status": "OK",
+  "opener": "````java"
+ },
+ {
+  "file": "apk/src/java/top/lzj2012/toolbox/Notifier.java",
+  "bytes_declared": 5232,
+  "bytes_extracted": 5232,
+  "sha256_declared": "814e4e3aeec333280a108d2691db881c32a2a687509568a21960f7cac114d70a",
+  "sha256_extracted": "814e4e3aeec333280a108d2691db881c32a2a687509568a21960f7cac114d70a",
+  "status": "OK",
+  "opener": "````java"
+ },
+ {
+  "file": "apk/src/java/top/lzj2012/toolbox/Prefs.java",
+  "bytes_declared": 3336,
+  "bytes_extracted": 3336,
+  "sha256_declared": "1a9b4bd500c7c2f0ee9e12fb44b7dd08e8dbc53625d3fed8f372110a0fa262a0",
+  "sha256_extracted": "1a9b4bd500c7c2f0ee9e12fb44b7dd08e8dbc53625d3fed8f372110a0fa262a0",
+  "status": "OK",
+  "opener": "````java"
+ },
+ {
+  "file": "apk/src/java/top/lzj2012/toolbox/WatchService.java",
+  "bytes_declared": 2904,
+  "bytes_extracted": 2904,
+  "sha256_declared": "715b53a8a495704809def2b16c679ebcdd15bfc0bf3c1ce3c4d6cd7535301b3e",
+  "sha256_extracted": "715b53a8a495704809def2b16c679ebcdd15bfc0bf3c1ce3c4d6cd7535301b3e",
+  "status": "OK",
+  "opener": "````java"
+ },
+ {
+  "file": "apk/src/res/drawable/splash.xml",
+  "bytes_declared": 377,
+  "bytes_extracted": 377,
+  "sha256_declared": "0aa883297bda6de1007a012cc4118a07f05a23ced8d397b0b1420331ae044c0a",
+  "sha256_extracted": "0aa883297bda6de1007a012cc4118a07f05a23ced8d397b0b1420331ae044c0a",
+  "status": "OK",
+  "opener": "````xml"
+ },
+ {
+  "file": "apk/src/res/mipmap-anydpi-v26/ic_launcher.xml",
+  "bytes_declared": 253,
+  "bytes_extracted": 253,
+  "sha256_declared": "63d58bee1ebd17bba3371ae1fee8e8fab01c4104ef5c29dd129fdc468836407a",
+  "sha256_extracted": "63d58bee1ebd17bba3371ae1fee8e8fab01c4104ef5c29dd129fdc468836407a",
+  "status": "OK",
+  "opener": "````xml"
+ },
+ {
+  "file": "apk/src/res/values/strings.xml",
+  "bytes_declared": 115,
+  "bytes_extracted": 115,
+  "sha256_declared": "6e8e8cffcf946529dee40b0b2a1c4088e3ccde5100284e80090bdb740b42614a",
+  "sha256_extracted": "6e8e8cffcf946529dee40b0b2a1c4088e3ccde5100284e80090bdb740b42614a",
+  "status": "OK",
+  "opener": "````xml"
+ },
+ {
+  "file": "apk/src/res/values/styles.xml",
+  "bytes_declared": 537,
+  "bytes_extracted": 537,
+  "sha256_declared": "b30a4b9e2ddb654a13dc6610cb7b3de79a0fa63d5fee048937313112d5eddf27",
+  "sha256_extracted": "b30a4b9e2ddb654a13dc6610cb7b3de79a0fa63d5fee048937313112d5eddf27",
+  "status": "OK",
+  "opener": "````xml"
+ },
+ {
+  "file": "apk/src/tools/make_icon.py",
+  "bytes_declared": 5053,
+  "bytes_extracted": 5053,
+  "sha256_declared": "5978c91c13bd5dd4a4d19cfe83052bc47d50206df8ecd5d8569929356c78579e",
+  "sha256_extracted": "5978c91c13bd5dd4a4d19cfe83052bc47d50206df8ecd5d8569929356c78579e",
+  "status": "OK",
+  "opener": "````python"
+ },
+ {
+  "file": "cloud/etc/ddos-allowlist.json",
+  "bytes_declared": 155,
+  "bytes_extracted": 156,
+  "sha256_declared": "08e68edad123f868ee88e982052929ca81ae70f6fcf757cb19d3eb859cbaa5c7",
+  "sha256_extracted": "a4f622170eab5593b65cc30ee189be80cc50983c623d1ecd70c068df661d12ac",
+  "status": "MISMATCH",
+  "opener": "````json"
+ },
+ {
+  "file": "cloud/opt/build/mcgate/src/com/lzj/mcgate/Backend.java",
+  "bytes_declared": 5417,
+  "bytes_extracted": 5418,
+  "sha256_declared": "235cb64c9e468019c7f3a8f12273cd1b16a238fc4c54f2c053844fc2b1888f12",
+  "sha256_extracted": "aec935fd01b8e2141ec30627d658877013d8db8a13e4571acf4c1d13ed0e78af",
+  "status": "MISMATCH",
+  "opener": "````java"
+ },
+ {
+  "file": "cloud/opt/build/mcgate/src/com/lzj/mcgate/Gate.java",
+  "bytes_declared": 9667,
+  "bytes_extracted": 9668,
+  "sha256_declared": "341ef858178b3c65293e8f648e8599ad04a684db5d4867eb78ac802ba96bf30f",
+  "sha256_extracted": "889949d05b574ab9d4d70c381e1529d63763f9e6f9697b4b88a95f63e8ab5308",
+  "status": "MISMATCH",
+  "opener": "````java"
+ },
+ {
+  "file": "cloud/opt/build/mcgate/src/com/lzj/mcgate/McGate.java",
+  "bytes_declared": 766,
+  "bytes_extracted": 767,
+  "sha256_declared": "cd3455c5ba2b4e92714b7e90741e2d39248f18a819d6064f35ccf7b7ca8996e1",
+  "sha256_extracted": "1394eae8a806f025046725899a97735dd6e19f1b53193a8e919cb42749fb4908",
+  "status": "MISMATCH",
+  "opener": "````java"
+ },
+ {
+  "file": "cloud/opt/build/mcgate/src/config.yml",
+  "bytes_declared": 1256,
+  "bytes_extracted": 1257,
+  "sha256_declared": "caa5df46365d3f1ae337d2af6157e01e5ba326ce0c8573b429a5aad08ccb018d",
+  "sha256_extracted": "5b95bc6a7e5aeac7b9934e27f20776bd2f1f16851fa671a10d7f2e16338945ff",
+  "status": "MISMATCH",
+  "opener": "````yaml"
+ },
+ {
+  "file": "cloud/opt/build/mcgate/src/plugin.yml",
+  "bytes_declared": 182,
+  "bytes_extracted": 182,
+  "sha256_declared": "0892b837e1f4edde6cd36d4e7a0602b0f879119cd53965c352b1e7dddbb8cebd",
+  "sha256_extracted": "0892b837e1f4edde6cd36d4e7a0602b0f879119cd53965c352b1e7dddbb8cebd",
+  "status": "OK",
+  "opener": "````yaml"
+ },
+ {
+  "file": "cloud/usr/local/sbin/cf-set-a.sh",
+  "bytes_declared": 1453,
+  "bytes_extracted": 1453,
+  "sha256_declared": "ba27d877391b3e464179ce54d7be387a2589fba421007a528a285ae91523d51d",
+  "sha256_extracted": "ba27d877391b3e464179ce54d7be387a2589fba421007a528a285ae91523d51d",
+  "status": "OK",
+  "opener": "````bash"
+ },
+ {
+  "file": "cloud/usr/local/sbin/ddos-mode.sh",
+  "bytes_declared": 1379,
+  "bytes_extracted": 1379,
+  "sha256_declared": "4fc09c50e6e3dc45afff06cddd789bb0a5521f6f8e16c79d88f5418cfcf13dd8",
+  "sha256_extracted": "4fc09c50e6e3dc45afff06cddd789bb0a5521f6f8e16c79d88f5418cfcf13dd8",
+  "status": "OK",
+  "opener": "````bash"
+ },
+ {
+  "file": "cloud/usr/local/sbin/ddos-monitor.py",
+  "bytes_declared": 5033,
+  "bytes_extracted": 5033,
+  "sha256_declared": "e0d14a3a49fa83b282236222d0a37e7d6124b183cffbd91f54a7a03d5f35c99e",
+  "sha256_extracted": "e0d14a3a49fa83b282236222d0a37e7d6124b183cffbd91f54a7a03d5f35c99e",
+  "status": "OK",
+  "opener": "````python"
+ },
+ {
+  "file": "cloud/usr/local/sbin/failover.sh",
+  "bytes_declared": 10918,
+  "bytes_extracted": 10918,
+  "sha256_declared": "1a2aef89ece98717647cbcfa6a8554c1cc100784123bcb810fa798311ebe1400",
+  "sha256_extracted": "1a2aef89ece98717647cbcfa6a8554c1cc100784123bcb810fa798311ebe1400",
+  "status": "OK",
+  "opener": "````bash"
+ },
+ {
+  "file": "cloud/usr/local/sbin/home-mc-alive.sh",
+  "bytes_declared": 755,
+  "bytes_extracted": 756,
+  "sha256_declared": "213d65a818a28c50588e6893cb5f47c68aa791bf42f89150caba12e6123c3bb3",
+  "sha256_extracted": "470713bc3b1b7e62e4e56958dbf5f424122c38be9830270afb8b68b4872e4eb1",
+  "status": "MISMATCH",
+  "opener": "````bash"
+ },
+ {
+  "file": "cloud/usr/local/sbin/logview-health.py",
+  "bytes_declared": 7364,
+  "bytes_extracted": 7364,
+  "sha256_declared": "0f51753b849ee87298d3b10002626b3550cfb7d709f4146d7ad4a23c130c4e31",
+  "sha256_extracted": "0f51753b849ee87298d3b10002626b3550cfb7d709f4146d7ad4a23c130c4e31",
+  "status": "OK",
+  "opener": "````python"
+ },
+ {
+  "file": "cloud/usr/local/sbin/mc-watchdog.sh",
+  "bytes_declared": 3458,
+  "bytes_extracted": 3458,
+  "sha256_declared": "7af35cb5b088c736ff9c827a24a6725b22bd26fa037ddb345f5f0748788df28c",
+  "sha256_extracted": "7af35cb5b088c736ff9c827a24a6725b22bd26fa037ddb345f5f0748788df28c",
+  "status": "OK",
+  "opener": "````bash"
+ },
+ {
+  "file": "cloud/usr/local/sbin/send-mail.py",
+  "bytes_declared": 7391,
+  "bytes_extracted": 7391,
+  "sha256_declared": "ec20eb644c5f2405214e1a8d8a278676bb6ad2217fae689f4abd116679e68ba1",
+  "sha256_extracted": "ec20eb644c5f2405214e1a8d8a278676bb6ad2217fae689f4abd116679e68ba1",
+  "status": "OK",
+  "opener": "````python"
+ },
+ {
+  "file": "cloud/var/www/chat-lib/ai-common.php",
+  "bytes_declared": 5286,
+  "bytes_extracted": 5286,
+  "sha256_declared": "81f906f39840b195f5408e4b8d1aa7899b7af5eb33aa16b5fce129f048a53158",
+  "sha256_extracted": "81f906f39840b195f5408e4b8d1aa7899b7af5eb33aa16b5fce129f048a53158",
+  "status": "OK",
+  "opener": "````php"
+ },
+ {
+  "file": "cloud/var/www/chat-lib/lib.php",
+  "bytes_declared": 26404,
+  "bytes_extracted": 26402,
+  "sha256_declared": "b6521c9a864d8e5b13f70395db023e725b13621219014f1d16a3138b079e8aee",
+  "sha256_extracted": "fb9617a06b37244cc348ff7bcb22453c21a748c7e8b9d6e2630c37df683b39de",
+  "status": "MISMATCH",
+  "opener": "````php"
+ },
+ {
+  "file": "cloud/var/www/chat/ai-admin.php",
+  "bytes_declared": 5012,
+  "bytes_extracted": 5012,
+  "sha256_declared": "5f251d706a80c14213792feed0013233513f61767aa8c089474d015e85a7c26a",
+  "sha256_extracted": "5f251d706a80c14213792feed0013233513f61767aa8c089474d015e85a7c26a",
+  "status": "OK",
+  "opener": "````php"
+ },
+ {
+  "file": "cloud/var/www/chat/ai-bot-action.php",
+  "bytes_declared": 7980,
+  "bytes_extracted": 7980,
+  "sha256_declared": "bc1458d2dc98c34cc577ad378651113e3c79a3d2114c32deeaaad23930d87196",
+  "sha256_extracted": "bc1458d2dc98c34cc577ad378651113e3c79a3d2114c32deeaaad23930d87196",
+  "status": "OK",
+  "opener": "````php"
+ },
+ {
+  "file": "cloud/var/www/chat/ai-bot.js",
+  "bytes_declared": 8338,
+  "bytes_extracted": 8338,
+  "sha256_declared": "a80cf56ed1c30425de2d44caf8c20408e4a21b26f6c6712041f29238b5e057bc",
+  "sha256_extracted": "a80cf56ed1c30425de2d44caf8c20408e4a21b26f6c6712041f29238b5e057bc",
+  "status": "OK",
+  "opener": "````javascript"
+ },
+ {
+  "file": "cloud/var/www/chat/ai-bot.php",
+  "bytes_declared": 6918,
+  "bytes_extracted": 6918,
+  "sha256_declared": "0ad6d62248c3c6c9156bffc63a2a12b763d96d6ba9079cd06588118ceccb1523",
+  "sha256_extracted": "0ad6d62248c3c6c9156bffc63a2a12b763d96d6ba9079cd06588118ceccb1523",
+  "status": "OK",
+  "opener": "````php"
+ },
+ {
+  "file": "cloud/var/www/chat/api.php",
+  "bytes_declared": 31003,
+  "bytes_extracted": 31003,
+  "sha256_declared": "7d02cbbd46297778c9fc31b8b82c64d557bb83bdb8e89c2b7317a2baf0c98524",
+  "sha256_extracted": "7d02cbbd46297778c9fc31b8b82c64d557bb83bdb8e89c2b7317a2baf0c98524",
+  "status": "OK",
+  "opener": "````php"
+ },
+ {
+  "file": "cloud/var/www/chat/app-api.php",
+  "bytes_declared": 11770,
+  "bytes_extracted": 11770,
+  "sha256_declared": "72ca3323bb38c1a2a6a9d26bd087e3da5b26cc3c7310e87c68e32cccae551c41",
+  "sha256_extracted": "72ca3323bb38c1a2a6a9d26bd087e3da5b26cc3c7310e87c68e32cccae551c41",
+  "status": "OK",
+  "opener": "````php"
+ },
+ {
+  "file": "cloud/var/www/chat/app-wait.php",
+  "bytes_declared": 4165,
+  "bytes_extracted": 4165,
+  "sha256_declared": "d7fe085bdebaf173ea7d040f6bcb2c5330e712b7996e4daff153560ac92bc5b6",
+  "sha256_extracted": "d7fe085bdebaf173ea7d040f6bcb2c5330e712b7996e4daff153560ac92bc5b6",
+  "status": "OK",
+  "opener": "````php"
+ },
+ {
+  "file": "cloud/var/www/chat/approve.php",
+  "bytes_declared": 4700,
+  "bytes_extracted": 4700,
+  "sha256_declared": "a5378a00b937a22bdc7166d674bda2132f0bbba9121d810f2e1eea7419b4e7e9",
+  "sha256_extracted": "a5378a00b937a22bdc7166d674bda2132f0bbba9121d810f2e1eea7419b4e7e9",
+  "status": "OK",
+  "opener": "````php"
+ },
+ {
+  "file": "cloud/var/www/chat/index.php",
+  "bytes_declared": 57670,
+  "bytes_extracted": 57670,
+  "sha256_declared": "3388e39e9cbeb48fbb08d0e3d6301d3ba267a22fbbd5e6bece4064e4619cbfc6",
+  "sha256_extracted": "3388e39e9cbeb48fbb08d0e3d6301d3ba267a22fbbd5e6bece4064e4619cbfc6",
+  "status": "OK",
+  "opener": "````php"
+ },
+ {
+  "file": "cloud/var/www/chat/mc-api.php",
+  "bytes_declared": 8676,
+  "bytes_extracted": 8676,
+  "sha256_declared": "b116b172518f29bb253d991220f85963a71dfffbf095465b26b0a25393c3d832",
+  "sha256_extracted": "b116b172518f29bb253d991220f85963a71dfffbf095465b26b0a25393c3d832",
+  "status": "OK",
+  "opener": "````php"
+ },
+ {
+  "file": "cloud/var/www/logview/app.py",
+  "bytes_declared": 18876,
+  "bytes_extracted": 18876,
+  "sha256_declared": "dc47ec3caae9684ec0e74d2afbb979bb273e751ffce5ae2413849eaf28dbf8f6",
+  "sha256_extracted": "dc47ec3caae9684ec0e74d2afbb979bb273e751ffce5ae2413849eaf28dbf8f6",
+  "status": "OK",
+  "opener": "````python"
+ },
+ {
+  "file": "cloud/var/www/logview/ddospanel.py",
+  "bytes_declared": 15413,
+  "bytes_extracted": 15413,
+  "sha256_declared": "ea11c6607f97bce83646258987fcb7360849aa534602e903486f9e7864b59236",
+  "sha256_extracted": "ea11c6607f97bce83646258987fcb7360849aa534602e903486f9e7864b59236",
+  "status": "OK",
+  "opener": "````python"
+ },
+ {
+  "file": "cloud/var/www/logview/mailpanel.py",
+  "bytes_declared": 6558,
+  "bytes_extracted": 6558,
+  "sha256_declared": "ec743d014de609fe441057702bc35bbe541e60a58cc5c68f5df09bb9b4399613",
+  "sha256_extracted": "ec743d014de609fe441057702bc35bbe541e60a58cc5c68f5df09bb9b4399613",
+  "status": "OK",
+  "opener": "````python"
+ },
+ {
+  "file": "cloud/var/www/logview/sources.json",
+  "bytes_declared": 6626,
+  "bytes_extracted": 6627,
+  "sha256_declared": "26e9dd9f8253fc3af0778c8ac193185a64dfe020e65b0885b1f36d70e80307d7",
+  "sha256_extracted": "8ba0126be96acc50ce1050401396cdd9a1a2875bead4fdf44521cbb352f45a6d",
+  "status": "MISMATCH",
+  "opener": "````json"
+ },
+ {
+  "file": "cloud/var/www/mcverify/index.php",
+  "bytes_declared": 27319,
+  "bytes_extracted": 27319,
+  "sha256_declared": "64c0d737f4c0b9396b6903179fd7bd7b004c5703c5c49e0fa96cac5fb743d7db",
+  "sha256_extracted": "64c0d737f4c0b9396b6903179fd7bd7b004c5703c5c49e0fa96cac5fb743d7db",
+  "status": "OK",
+  "opener": "````php"
+ }
+]

@@ -1,0 +1,42 @@
+=== mcverify logout 只清 chq (mcverify/index.php:198-201) ===
+ 198| case 'logout': {
+ 199| setcookie(COOKIE_NAME, '', ['expires' => time() - 3600, 'path' => '/', 'secure' => true, 'httponly' => true, 'samesite' => 'Lax']);
+ 200| jout(['ok' => true]);
+ 201| }
+
+=== 对照 chat/api.php logout 会吊销设备令牌 (api.php:206-210) ===
+ 206| case 'logout': {
+ 207| $__lu = current_user(); if ($__lu) { try { device_revoke_all((int)$__lu['id']); } catch (Throwable $e) {} }
+ 208| setcookie(COOKIE_NAME, '', ['expires' => time() - 3600, 'path' => '/', 'secure' => true, 'httponly' => true, 'samesite' => 'Lax']);
+ 209| jout(['ok' => true]);
+ 210| }
+
+=== lib.php current_user() 的设备令牌兜底 (lib.php:184-185, 206-220) ===
+ 184| // 2026-10-10: 会话缺失/过期时, 用"信任此设备"令牌兜底 (让用户不用反复输密码)
+ 185| if (!$u) { try { $u = device_user(); } catch (Throwable $e) { $u = null; } }
+ 206| function device_user(): ?array {
+ 207| $raw = (string)($_COOKIE[device_cookie_name()] ?? '');
+ 211| $st = db()->prepare('SELECT id FROM trusted_devices WHERE user_id = ? AND token_hash = ? AND revoked_at IS NULL AND expires_at > NOW() LIMIT 1');
+ 216| $u = db()->prepare('SELECT id, nickname, email, verified, is_admin, role, tos_agreed_at FROM users WHERE id = ?');
+
+=== 复刻流程 ===
+  [1] 登录后浏览器持有的 Cookie: chq=<有效会话>, chq_dev=1|<64hex>
+      current_user() -> 受害者（已登录）
+  [2] 点击“退出” -> mcverify 仅 setcookie(COOKIE_NAME,'')；chq_dev 原样保留
+      current_user() -> 受害者（仍然登录！设备令牌兜底成功）
+      页面分支 if(!$u) 判定为登录态 -> 直接渲染已登录界面
+
+  [3] 对照：若调用 chat/api.php logout（吊销 trusted_devices）
+      current_user() -> None（真正退出）
+  设备令牌有效期 365 天（lib.php:197-198 DATE_ADD(NOW(), INTERVAL 365 DAY)）
+
+=== 附：tos_decline 也是空操作 (mcverify/index.php:146-150) ===
+ 146| case 'tos_decline': {
+ 147| $_SESSION = [];
+ 148| @session_destroy();
+ 149| jout(['ok' => true]);
+ 150| }
+  全文出现 session_start = False （系统用自签 Cookie 会话，$_SESSION 从未启用）
+
+判定: mcverify 退出后设备令牌仍可恢复登录；拒绝条款（tos_decline）亦无效。
+RESULT: 复现通过

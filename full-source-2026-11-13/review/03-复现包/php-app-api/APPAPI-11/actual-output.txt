@@ -1,0 +1,22 @@
+# 本文件由本机真实运行生成：
+# 命令: C:\Users\18012\.dsh\dsh-runtimes\dsh-primary-runtime\dependencies\python\python.exe work\repro\php-app-api\APPAPI-11\poc.py
+# 退出码: 0
+# ------------------------------------------------------------
+== 1) 源码核对
+   mc_rate 默认值 0.15: True
+   check 使用 mt_rand(): True
+   check 使用 random_int()/random_bytes(): True
+   check 同时含 rate 比较分支: True
+
+== 2) 概率与可预测性
+   mc_check_rate = 0.15 -> 每次进服有 15% 概率被要求重新验证，
+   85% 概率直接 verify=false 放行（对已绑定账号）。
+   mt_rand()/mt_getrandmax() 为 MT19937 线性同余状态；非 CSPRNG，
+   若攻击者能收集到抽样结果（例如多次进服的“是否被冻结”观察），可恢复 MT 状态并预测后续抽样。
+   即便不恢复内部状态，这个抽样本身也可被脚本化规避（少数几次尝试内总有 85% 直接通过）。
+
+== 3) 影响边界
+   这不是「绕过封禁/鉴权」的主因（见 APPAPI-01/02：封禁与 verified 根本不在 check 里），
+   但它让「已绑定账号定期重新验证」这一反滥用机制形同虚设，且用了错误的随机源。
+
+RESULT: PASS

@@ -1,0 +1,1 @@
+# 授权测试白名单 (pentest-allow.sh 管理, 每行一个 IP/CIDR)

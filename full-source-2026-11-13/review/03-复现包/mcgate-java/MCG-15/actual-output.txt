@@ -1,0 +1,61 @@
+FINDING: MCG-15 被封禁账号绑定的 MC 名仍被准入放行(跨文件 mc-api.php)
+REPRO_LEVEL: R2
+
+== A. check 分支里没有任何封禁判断 ==
+  mc-api.php:42   case 'check': {
+  mc-api.php:43   if (!mc_secret_ok()) fail('forbidden', 403);
+  mc-api.php:44   $b = mc_body(); $name = trim((string)($b["name"] ?? ""));
+  mc-api.php:45   if ($name === '' || strlen($name) > 32) fail('bad name');
+  mc-api.php:46   $st = $pdo->prepare('SELECT b.user_id, u.tos_agreed_at FROM mc_bindings b LEFT JOIN users u ON u.id = b.user_id WHERE b.mc_name = ? LIMIT 1');
+  mc-api.php:47   $st->execute([$name]); $bind = $st->fetch(PDO::FETCH_ASSOC);
+  mc-api.php:48   $isBound = (bool)$bind;
+  mc-api.php:50   if ($isBound && empty($bind['tos_agreed_at'])) {
+  mc-api.php:51   jout(["ok"=>true,"verify"=>false,"need_tos"=>true]);
+  mc-api.php:53   if ($isBound && (mt_rand() / mt_getrandmax()) > mc_rate()) jout(["ok"=>true,"verify"=>false]);
+  mc-api.php:54   $st = $pdo->prepare('SELECT id, code, link_token, expires_at, TIMESTAMPDIFF(SECOND, NOW(), expires_at) AS ttl FROM mc_codes WHERE mc_name = ? AND submitted_at IS NULL AND expires_at > NOW() ORDER BY id DESC LIMIT 1');
+  mc-api.php:69   chat_log('[MC闸门]', 'issue name=' . $name . ' bound=' . ($isBound ? '1' : '0') . ' code=' . substr($code, 0, 4) . '****');
+  mc-api.php:70   jout(["ok"=>true,"verify"=>true,"code"=>$code,"link"=>$link,"expires_in"=>$ttl]);
+  grep 'ban' in mc-api.php: 0 处
+
+== B. 封禁检查只存在于 require_login(登录态接口) ==
+  lib.php:227  function require_login(): array {
+  lib.php:228  $u = current_user();
+  lib.php:229  if (!$u) fail('请先登录', 401);
+  lib.php:230  if (ban_active((int)$u['id']) === 'ban') fail('账号已被封禁', 403);
+  lib.php:231  return $u;
+  即: 被封账号无法再 submit 新验证码, 但 check/pending/ack 这三个用共享密钥的接口
+      完全不查 ban => 已绑定+已同意 TOS 的 MC 名继续被 verify=false 放行。
+
+== C. 插件没有'拒绝'语义 ==
+  Backend.java:127  public static class CheckResult {
+  Backend.java:128  public boolean ok;
+  Backend.java:129  public boolean needVerify;
+  Backend.java:130  public boolean needTos;
+  Backend.java:131  public String code;
+  Backend.java:132  public String link;
+  Backend.java:133  public int expiresIn = 300;
+  Backend.java:134  }
+  => 即使后端想拒绝, 协议里也没有 deny 字段; Gate 只能冻结/放行。
+
+== D. 判定分支模拟 ==
+  普通已绑定玩家                        banned=False -> verify=false(放行)
+  已绑定的被封禁账号                      banned=True  -> verify=false(放行)
+  被封禁且未同意 TOS 的账号                banned=True  -> need_tos(冻结, 引导同意协议)
+
+  被封禁账号与普通玩家判定完全相同 => 封禁对 MC 准入零影响。
+  影响:
+   - 运维'封了人'但对方继续进 MC 服(85% 直接进, 15% 拿码后因 403 无法提交, 重进再试) =>
+     封禁的威慑力被显著削弱;
+   - 同一玩家可换聊天账号, 但 MC 名绑定不变 => 换号后仍按'已绑定'放行?
+     不: 绑定行 user_id 仍是旧账号, 新账号 submit 会被 409 挡住 => 反而锁死, 需人工处理。
+
+== 修复建议 ==
+  1) mc-api.php check 中 JOIN bans 判断: 若绑定用户存在有效 ban => 返回 {deny:true,reason}
+  2) Backend.CheckResult 增加 boolean denied + String denyReason;
+     Gate.onPreLogin(或 onJoin 的 kickTask 之前) 直接 kickPlayer(denyReason), 不进世界;
+  3) 同时把 pending/ack 也按 ban 过滤, 避免被封账号的残留验证码触发解锁。
+
+== 判定标准 ==
+  check 分支无 ban 判断 + 插件无 deny 语义 => 静态确认(R2)。
+
+RESULT: VULNERABLE-STATIC

@@ -1,0 +1,30 @@
+# 本文件由本机真实运行生成：
+# 命令: C:\Users\18012\.dsh\dsh-runtimes\dsh-primary-runtime\dependencies\python\python.exe work\repro\php-app-api\APPAPI-13\poc.py
+# 退出码: 0
+# ------------------------------------------------------------
+== 1) 令牌熵
+   link_token 匹配规则 12 hex: True（mc-api.php:137/148；approve.php:5）
+   12 hex = 48 bit；设备令牌 64 hex = 256 bit；差异 208 bit。
+   48 bit 的暴力枚举在 1000 请求/秒下约需 8926 年（不可行），因此这不是主风险；
+   风险在于：它是「持链接即有权查看/审批」的 bearer token，且会出现在游戏聊天、截图、URL 历史里。
+
+== 2) 无鉴权即可读取 MC 玩家名与审批状态
+   link_status 分支要求登录(require_login)=False
+   link_status 返回 mc_name=True
+   approve.php 使用 current_user() 但页面内容不强制登录=True
+   -> 任何拿到链接的人（含转发、截图、共享聊天记录）都能看到玩家名与是否已批准，
+      并可直接用自己账号批准（approve_link 只需登录，不校验「链接原本发给谁」）。
+
+== 3) 缓存/历史残留
+   approve.php 含 Cache-Control: False
+   approve.php 含 Referrer-Policy: False
+   -> 链接（含 token）会进入浏览器历史；若页面引用第三方资源，还会经 Referer 外泄。
+      当前页面无外部资源，风险低，但补 no-store/Referrer-Policy 是零成本加固。
+
+== 4) 推荐口径
+   - link_token 至少 96-128 bit（bin2hex(random_bytes(16)) = 32 hex）；
+   - link_status 未登录只返回 status，不返回 mc_name；
+   - approve.php 未登录时把玩家名打码（如 St***e）；
+   - 加 Cache-Control: no-store 与 Referrer-Policy: no-referrer。
+
+RESULT: PASS

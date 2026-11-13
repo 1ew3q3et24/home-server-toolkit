@@ -1,0 +1,36 @@
+FINDING: MCG-12 异步 HTTP 资源控制缺失(积压/线程/日志)
+REPRO_LEVEL: R2
+
+== 证据 ==
+  Gate.java:78     Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {                  | 每名玩家入服一个新异步任务
+  Gate.java:79     Backend.CheckResult cr = backend.check(name);                                | 任务内同步阻塞 HTTP
+  McGate.java:17   getServer().getScheduler().runTaskTimerAsynchronously(this, () -> gate.poll( | 固定 3 秒异步轮询(60 ticks)
+  Gate.java:157    List<String> done = backend.pending();                                       | poll 内阻塞调用 pending
+  Gate.java:162    List<String> agreed = tosNames.isEmpty() ? new ArrayList<>() : backend.tosCh | 有 TOS 冻结玩家时再阻塞一次 tosCheck
+  Backend.java:66  plugin.getLogger().warning("后端 check 失败: " + e);                             | 失败仅一条 warning(每次入服)
+  Backend.java:109 plugin.getLogger().warning("后端 pending 失败: " + e);                           | pending 失败每 3 秒一条 warning
+  Gate.java:214    final String m = f.needTos ? tosMsg() : msg(f.code);                         | AsyncChatEvent(异步) 线程里读 config(msg/tosMsg)
+
+== 排队模型(后端每次耗时 P 秒; connect+request 上限 16s) ==
+  后端耗时       poll 并发数(3s 周期)          入服任务并发                   风险
+  0.05s      ~1                       1/玩家(无上限)                正常
+  1.00s      ~1                       1/玩家(无上限)                慢
+  5.00s      ~2                       1/玩家(无上限)                很慢
+  8.00s      ~3                       1/玩家(无上限)                接近超时
+  16.00s     ~5                       1/玩家(无上限)                超时
+
+  * Bukkit 的异步任务不会因为上一个没跑完而丢弃: 每次 poll 与每个入服任务都会启动;
+    后端变慢时(例如正被 DDoS, 见 MCG-01) 线程/队列随连接数增长, 没有信号量/熔断/退避。
+  * Backend 构造的 java.net.http.HttpClient(Backend.java:25) 从不 close;
+    onDisable 只调 gate.shutdown()(McGate.java:23), 插件热重载会累积 HttpClient
+    与其 selector/executor 线程(Java 11~17 无 close(), 21 有但未用)。
+  * 后端不可用时, pending 失败日志 = 每 3 秒 1 条 = 约 2.9 万条/天; check 失败 = 每次
+    入服 1 条; 日志文件无限增长, 且没有告警分级。
+  * 线程安全边界: frozen 用 ConcurrentHashMap(Gate.java:36) 正确; 但 AsyncChatEvent
+    线程里经 msg()/tosMsg() 读 plugin.getConfig()(Gate.java:64-72,210-216), 与主线程
+    /reload 配置并发时 YamlConfiguration 无同步保证。
+
+== 判定标准 ==
+  无并发上限/无熔断/无退避 + 每次失败都同步阻塞到超时 => 静态确认(R2, P3 级健壮性)。
+
+RESULT: CONFIRMED

@@ -1,0 +1,33 @@
+=== 声明 1（chat/index.php:105） ===
+  chat/index.php:105| <p style="font-size:13px;color:#475569;line-height:1.7;margin:0 0 10px">请先阅读并确认以下条款。在您点击确认前，本站不会写入 Cookie，也不会记录任何个人信息。</p>  
+
+=== 但页面在服务端返回前就已是无条件执行：写诱饵 Cookie (index.php:6) ===
+  chat/index.php:6| set_decoy_cookie();  
+  lib.php:118| function set_decoy_cookie(): void {  
+  lib.php:118-124 set_decoy_cookie(): setcookie(PHPSESSID, ...) 对每个访客无条件写入，
+  与【是否同意】无关；同时 current_user() 会更新 users.last_seen (lib.php:186)。
+  lib.php:186| if ($u) { try { db()->prepare('UPDATE users SET last_seen = NOW() WHERE id = ?')->execute([(int)$u['id']]); } catch (Throwable $e) {} }  
+
+=== chat 页在同意前还会写 sessionStorage（index.php:920-924） ===
+  chat/index.php:920| if (/LZJToolbox/.test(navigator.userAgent||"")) return;  
+  chat/index.php:922| if (!/Android|iPhone|iPod|Mobile|HarmonyOS/i.test(ua) || /Windows NT|Macintosh/i.test(ua)) return;  
+  chat/index.php:923| if (sessionStorage.getItem("lzj_app_jump")) return;  
+  chat/index.php:924| sessionStorage.setItem("lzj_app_jump","1");  
+
+=== 声明 2（mcverify/index.php:308） ===
+  mcverify/index.php:308| <p class="tos-lead">本页面用于账号注册与 Minecraft 玩家身份验证。在点击确认前，本站不会写入 Cookie，也不会发起任何请求。</p>  
+
+=== 但页面一加载就发请求 / 引外链：
+  mcverify/index.php:302| <link rel="icon" href="https://lzj2012.top/favicon.ico">  <-- 外部 favicon (跨域)
+  mcverify/index.php:353| <div class="regline"><img src="https://lzj2012.top/favicon.ico" alt="" width="16" height="16"> 注册地址：mcverify.lzj2012.top · 需要：邮箱、昵称、6 位以上密码（邀请制另需邀请码）<  <-- 外部 favicon (跨域)
+  mcverify/index.php:438| fetch('/?action=status',{credentials:'same-origin',cache:'no-store'}).then(function(r){return r.json()}).then(function(j){  <-- 未同意即 fetch /?action=status
+  mcverify/index.php:443| refresh();     refresh() 在页面加载即执行
+
+=== 结论 ===
+  - 两处隐私声明均自称【点击确认前不写 Cookie / 不记录 / 不发请求】，
+    实际：写 Cookie(PHPSESSID)、写 sessionStorage、更新 last_seen、跨域拉图标、
+    请求 /?action=status（对 mc.lzj2012.top 做 TCP 探活）。
+  - 属于【声明与实现不一致】（合规/文档缺陷），不是独立利用链，但会放大 WEB-02/WEB-03
+    的【闸门形同虚设】结论。
+
+RESULT: 复现通过

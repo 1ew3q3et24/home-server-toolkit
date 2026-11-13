@@ -1,0 +1,43 @@
+=== api.php 各 action 是否在服务端校验 TOS(users.tos_agreed_at) ===
+  me           服务端 TOS 校验 = True   require_login=False
+  tos_agree    服务端 TOS 校验 = True   require_login=True
+  register     服务端 TOS 校验 = False  require_login=False
+  sendcode     服务端 TOS 校验 = False  require_login=False
+  verify       服务端 TOS 校验 = False  require_login=False
+  forgot       服务端 TOS 校验 = False  require_login=False
+  reset        服务端 TOS 校验 = False  require_login=False
+  login        服务端 TOS 校验 = False  require_login=False
+  logout       服务端 TOS 校验 = False  require_login=False
+  send         服务端 TOS 校验 = True   require_login=True
+  poll         服务端 TOS 校验 = False  require_login=True
+  upload       服务端 TOS 校验 = False  require_login=True
+  file         服务端 TOS 校验 = False  require_login=True
+  admin_users  服务端 TOS 校验 = False  require_login=True
+  admin_ban    服务端 TOS 校验 = False  require_login=True
+  admin_deluser 服务端 TOS 校验 = False  require_login=True
+
+  TOS 受控 action: ['me', 'tos_agree', 'send']
+  TOS 不受控 action: ['register', 'sendcode', 'verify', 'forgot', 'reset', 'login', 'logout', 'poll', 'upload', 'file', 'admin_users', 'admin_ban', 'admin_deluser']
+
+=== poll 分支（api.php:236-246）语义复刻 ===
+  前置: 会话有效、users.tos_agreed_at = NULL（用户从未点过同意）
+  调用 poll(since=0) -> ok=True, messages=1 条（含他人昵称/正文）
+  poll 分支出现 'tos_agreed_at' = False | 出现 'require_login' = True
+  me 分支返回 email/need_tos: email=True need_tos=True
+
+=== chat/index.php 的闸门只决定 DOM 显示 ===
+  13| $__tos_user = current_user();
+  14| $needTos = ($__tos_user && empty($__tos_user['tos_agreed_at']));
+ 102| <div id="tos" role="dialog" aria-modal="true" style="position:fixed;inset:0;z-index:9999;background:rgba(15,23,42,.72);display:<?= $needTos ? 'flex' : 'none' ?>;align-items:center;justify-content:center;padding:16px">
+ 897| window.NEED_TOS = <?= $needTos ? 'true' : 'false' ?>;
+ 887| fetch("/api.php?action=tos_agree",{method:"POST",credentials:"same-origin"}).then(function(){location.reload()});
+
+=== 闸门 fail-open 条件：empty() 对零日期的判定 ===
+  tos_agreed_at=None                     empty()=True  -> 需展示TOS=是
+  tos_agreed_at=''                       empty()=True  -> 需展示TOS=是
+  tos_agreed_at='0'                      empty()=True  -> 需展示TOS=是
+  tos_agreed_at='0000-00-00 00:00:00'    empty()=False -> 需展示TOS=否(直接放行)
+  tos_agreed_at='2026-10-17 10:00:00'    empty()=False -> 需展示TOS=否(直接放行)
+
+判定: 服务端仅 send 校验 TOS；poll/upload/file 未校验（me 仅回传 need_tos 提示） -> 删除 #tos 遮罩或直接调 API 即可在未同意隐私政策的情况下读取他人消息/邮箱并上传。
+RESULT: 复现通过

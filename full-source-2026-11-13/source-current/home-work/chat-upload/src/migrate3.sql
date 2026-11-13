@@ -1,0 +1,15 @@
+SET NAMES utf8mb4;
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS kind VARCHAR(8) NOT NULL DEFAULT 'text';
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS file_id BIGINT NULL;
+CREATE TABLE IF NOT EXISTS uploads (
+  id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  user_id INT NOT NULL,
+  orig_name VARCHAR(128) NULL,
+  mime VARCHAR(64) NOT NULL,
+  ext VARCHAR(8) NOT NULL,
+  bytes INT NOT NULL,
+  sha256 CHAR(64) NOT NULL,
+  created_at DATETIME NOT NULL,
+  KEY idx_user_time (user_id, created_at),
+  KEY idx_created (created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;

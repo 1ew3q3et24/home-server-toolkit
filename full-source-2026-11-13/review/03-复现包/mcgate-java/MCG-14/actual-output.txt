@@ -1,0 +1,46 @@
+FINDING: MCG-14 TOS 闸门依赖客户端 cookie (可伪造) + tos_agree 无 CSRF
+REPRO_LEVEL: R2
+
+== 证据 ==
+  index.php:9    $u = current_user(); // P0: 提前定义，供 tos_agree 等 action 使用
+  index.php:121  try {
+  index.php:122  if ($action !== '' && !in_array($action, ['tos_accept','tos_agree','tos_decline','status'], true) && empty($_COOKIE['tos_ok'])) {
+  index.php:123  jout(['ok' => false, 'error' => '请先同意用户协议'], 403);
+  index.php:124  }
+  index.php:126  if (in_array($action, ['submit','mine'], true) && $u && empty($u['tos_agreed_at'])) {
+  index.php:127  jout(['ok' => false, 'error' => '请先同意用户协议', 'need_tos' => true], 403);
+  index.php:128  }
+  index.php:139  case 'tos_agree': {
+  index.php:140  if (!$u) fail('请先登录');
+  index.php:141  $st = db()->prepare('UPDATE users SET tos_version=?, tos_agreed_at=NOW(), tos_ip=?, tos_ua=? WHERE id=?');
+  index.php:142  $st->execute(['2026-10-17', client_ip(), substr((string)($_SERVER['HTTP_USER_AGENT'] ?? ''), 0, 255), (int)$u['id']]);
+  index.php:143  jout(['ok' => true]);
+  index.php:152  case 'tos_accept': {
+  index.php:153  setcookie('tos_ok', '1', ['expires'=>time()+86400*30, 'path'=>'/', 'secure'=>true, 'httponly'=>true, 'samesite'=>'Lax']);
+  index.php:154  jout(['ok' => true]);
+  index.php:155  }
+
+== 结论 1: 闸门是客户端侧开关 ==
+  * $_COOKIE['tos_ok'] 完全由客户端掌控(浏览器 devtools / curl / 任何 HTTP 客户端),
+    服务端不验签、不与会话/账号绑定 => 任何人可以跳过'请先同意用户协议'这一步:
+      curl -H 'Cookie: tos_ok=1' 'https://<测试域>/mcverify/?action=login' -d 'key=..&password=..'
+    期望结果: 不再返回 403 '请先同意用户协议', 直接进入登录逻辑。
+  * 后果: 隐私/协议同意记录存在缺失的法律与合规风险; '用户已阅读协议'无法举证。
+  * 注意: submit/mine 还有 :126 的 users.tos_agreed_at 校验(数据库侧), 所以
+    MC 名绑定这一步不能被单纯伪造 cookie 跳过 —— 这是本项只定 P3 的原因。
+
+== 结论 2: tos_agree 无 CSRF 防护 ==
+  * action 允许 GET(`?action=tos_agree`), 只要求已登录(require_login), 无 Origin/Referer、
+    无 CSRF token; 第三方页面/同站 HTML 注入可让已登录用户被动'同意协议'。
+  * 且 tos_agree 不校验 tos_version 是否变化, 一次点击即写 NOW()。
+
+== 修复建议 ==
+  1) 服务端 TOS 状态以 users.tos_agreed_at 为准(已经在做), 删掉对 tos_ok cookie 的
+     功能性依赖, cookie 最多用于 UI 提示;
+  2) tos_agree 改为 POST + CSRF token + 校验 tos_version;
+  3) 记录同意时的 tos_version/ip/ua(已有)并保留审计。
+
+== 判定标准 ==
+  安全判定依赖客户端可控 cookie => 静态确认(R2)。
+
+RESULT: CONFIRMED
